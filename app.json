@@ -1,0 +1,30 @@
+{
+  "expo": {
+    "name": "ChatHPC",
+    "slug": "chathpc",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#0f131c"
+    },
+    "ios": {
+      "bundleIdentifier": "com.eclo.chathpc",
+      "buildNumber": "31",
+      "infoPlist": {
+        "UIBackgroundModes": [
+          "fetch",
+          "remote-notification"
+        ],
+        "NSCameraUsageDescription": "ChatHPC cần quyền truy cập camera để quét mã QR sử dụng điểm.",
+        "NSPhotoLibraryUsageDescription": "ChatHPC cần quyền truy cập thư viện ảnh để cập nhật ảnh đại diện.",
+        "NSPhotoLibraryAddOnlyUsageDescription": "ChatHPC cần quyền để lưu ảnh vào thiết bị.",
+        "NSFaceIDUsageDescription": "Cho phép ChatHPC sử dụng Face ID để đăng nhập nhanh chóng và bảo mật."
+      }
+    },
+    "android": {
+      "package": "com.eclo.chathpc"
+    }
+  }
+}
