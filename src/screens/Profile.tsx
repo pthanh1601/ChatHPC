@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { View, Text, Image, TouchableOpacity, ScrollView, Switch, SafeAreaView, Platform, StatusBar } from 'react-native';
 import { Search, Sparkles, Bell, Shield, Palette, LogOut, ChevronRight } from 'lucide-react-native';
 import { BlurView } from 'expo-blur';
-import { AppScreen, HERO_AVATAR, USER_AVATAR } from '../../data';
+import { AppScreen, HERO_AVATAR, USER_AVATAR } from '../data';
 
 export function Profile({ setScreen }: { setScreen: (s: AppScreen) => void }) {
   const [blurIntensity, setBlurIntensity] = useState(0);

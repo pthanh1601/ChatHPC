@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { View, Text, Image, TouchableOpacity, TextInput, ScrollView, KeyboardAvoidingView, Platform, SafeAreaView, StatusBar } from 'react-native';
 import { ArrowLeft, Phone, Video, CheckCheck, Plus, Mic, Send } from 'lucide-react-native';
 import { BlurView } from 'expo-blur';
-import { AppScreen, CONTACTS, MEDIA } from '../../data';
+import { AppScreen, CONTACTS, MEDIA } from '../data';
 
 export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void }) {
   const [blurIntensity, setBlurIntensity] = useState(0);
@@ -107,10 +107,12 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
             <TextInput 
               placeholder="Type your message..." 
               placeholderTextColor="#a0a0a0" 
-              className="text-base text-white p-0 m-0" 
+              className="w-full text-base text-white p-0" 
               style={{ 
                 includeFontPadding: false, 
-                textAlignVertical: 'center'
+                textAlignVertical: 'center',
+                paddingVertical: 0,
+                marginTop: -4
               }}
             />
           </View>

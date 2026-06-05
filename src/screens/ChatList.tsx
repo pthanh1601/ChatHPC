@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { View, Text, Image, TouchableOpacity, ScrollView, SafeAreaView, Platform, StatusBar } from 'react-native';
 import { Search, Plus, CheckCheck, MessageSquarePlus } from 'lucide-react-native';
 import { BlurView } from 'expo-blur';
-import { AppScreen, CONTACTS, USER_AVATAR } from '../../data';
+import { AppScreen, CONTACTS, USER_AVATAR } from '../data';
 
 export function ChatList({ setScreen }: { setScreen: (s: AppScreen) => void }) {
   const [blurIntensity, setBlurIntensity] = useState(0);

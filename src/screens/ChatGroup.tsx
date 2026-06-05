@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { View, Text, Image, TouchableOpacity, TextInput, ScrollView, KeyboardAvoidingView, Platform, Keyboard, SafeAreaView, StatusBar } from 'react-native';
 import { ArrowLeft, Info, Pin, X, PlusCircle, Smile, Send, CheckCheck, Plus } from 'lucide-react-native';
 import { BlurView } from 'expo-blur';
-import { AppScreen, CONTACTS, MEDIA } from '../../data';
+import { AppScreen, CONTACTS, MEDIA } from '../data';
 
 export function ChatGroup({ setScreen }: { setScreen: (s: AppScreen) => void }) {
   const [isKeyboardVisible, setKeyboardVisible] = useState(false);
@@ -150,10 +150,12 @@ export function ChatGroup({ setScreen }: { setScreen: (s: AppScreen) => void }) 
             <TextInput 
               placeholder="Type a message..." 
               placeholderTextColor="#a0a0a0" 
-              className="text-base text-white p-0 m-0"
+              className="w-full text-base text-white p-0"
               style={{ 
                 includeFontPadding: false, 
-                textAlignVertical: 'center'
+                textAlignVertical: 'center',
+                paddingVertical: 0,
+                marginTop: -4
               }}
             />
           </View>

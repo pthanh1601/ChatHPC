@@ -5,10 +5,10 @@
 import { useState } from 'react';
 import { AppScreen } from './data';
 import { BottomNav } from './components/BottomNav';
-import { ChatList } from './components/screens/ChatList';
-import { ChatSingle } from './components/screens/ChatSingle';
-import { ChatGroup } from './components/screens/ChatGroup';
-import { Profile } from './components/screens/Profile';
+import { ChatList } from './screens/ChatList';
+import { ChatSingle } from './screens/ChatSingle';
+import { ChatGroup } from './screens/ChatGroup';
+import { Profile } from './screens/Profile';
 import { SafeScreen } from './components/SafeScreen';
 
 export default function App() {
