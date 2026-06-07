@@ -26,11 +26,11 @@ export function ChatGroup({ setScreen }: { setScreen: (s: AppScreen) => void }) 
   return (
     <KeyboardAvoidingView className="flex-1 bg-background" behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <Header blurIntensity={blurIntensity}>
-        <View className="flex-row items-center gap-4">
-          <TouchableOpacity onPress={() => setScreen('chat_list')}>
+        <View className="flex-row items-center">
+          <TouchableOpacity onPress={() => setScreen('chat_list')} className="mr-4">
             <ArrowLeft size={24} color="#dcb8ff" />
           </TouchableOpacity>
-          <View className="flex-row -space-x-3">
+          <View className="flex-row -space-x-3 mr-4">
             <View className="h-10 w-10 rounded-full border-2 border-background overflow-hidden">
               <Image source={{ uri: CONTACTS.kael.avatar }} className="w-full h-full" />
             </View>
@@ -74,8 +74,8 @@ export function ChatGroup({ setScreen }: { setScreen: (s: AppScreen) => void }) 
         </View>
 
         {/* Pinned Message */}
-        <View className="rounded-xl p-4 flex-row items-center gap-3 bg-card relative overflow-hidden my-4 border border-primary/50">
-          <Pin size={20} color="#dcb8ff" />
+        <View className="rounded-xl p-4 flex-row items-center bg-card relative overflow-hidden my-4 border border-primary/50">
+          <View className="mr-3"><Pin size={20} color="#dcb8ff" /></View>
           <View className="flex-1">
             <Text className="text-xs font-semibold text-primary">Pinned Message</Text>
             <Text className="text-sm text-white" numberOfLines={1}>Meeting tomorrow at 10 AM. Don't forget the prototypes!</Text>

@@ -60,8 +60,8 @@ export function Search({ setScreen }: { setScreen: (s: AppScreen) => void }) {
         <Text className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-4">Tìm kiếm gần đây</Text>
         
         <View className="gap-4 mb-8">
-          <TouchableOpacity className="flex-row items-center gap-3">
-            <View className="w-10 h-10 bg-surface rounded-full flex items-center justify-center border border-white/5">
+          <TouchableOpacity className="flex-row items-center">
+            <View className="w-10 h-10 bg-surface rounded-full flex items-center justify-center border border-white/5 mr-3">
               <Clock size={16} color="#a0a0a0" />
             </View>
             <Text className="text-base text-white flex-1">Nhóm Cyber Nexus</Text>
@@ -70,8 +70,8 @@ export function Search({ setScreen }: { setScreen: (s: AppScreen) => void }) {
             </TouchableOpacity>
           </TouchableOpacity>
           
-          <TouchableOpacity className="flex-row items-center gap-3">
-            <View className="w-10 h-10 bg-surface rounded-full flex items-center justify-center border border-white/5">
+          <TouchableOpacity className="flex-row items-center">
+            <View className="w-10 h-10 bg-surface rounded-full flex items-center justify-center border border-white/5 mr-3">
               <Clock size={16} color="#a0a0a0" />
             </View>
             <Text className="text-base text-white flex-1">Nova</Text>
@@ -85,8 +85,8 @@ export function Search({ setScreen }: { setScreen: (s: AppScreen) => void }) {
         
         <View className="gap-4">
           {[CONTACTS.luna, CONTACTS.nova].map((contact, i) => (
-            <TouchableOpacity key={i} className="bg-card rounded-2xl p-4 flex-row items-center gap-3 border border-white/5" onPress={() => setScreen('chat_single')}>
-              <View className="w-12 h-12 rounded-full overflow-hidden border border-white/10">
+            <TouchableOpacity key={i} className="bg-card rounded-2xl p-4 flex-row items-center border border-white/5" onPress={() => setScreen('chat_single')}>
+              <View className="w-12 h-12 rounded-full overflow-hidden border border-white/10 mr-3">
                 <Image source={{ uri: contact.avatar }} className="w-full h-full" />
               </View>
               <View className="flex-1 justify-center ml-1">

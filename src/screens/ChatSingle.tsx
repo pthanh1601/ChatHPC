@@ -77,12 +77,12 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
   return (
     <KeyboardAvoidingView className="flex-1 bg-background relative" behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <Header blurIntensity={blurIntensity}>
-        <View className="flex-row items-center gap-4">
-          <TouchableOpacity onPress={() => setScreen('chat_list')}>
+        <View className="flex-row items-center">
+          <TouchableOpacity onPress={() => setScreen('chat_list')} className="mr-4">
             <ArrowLeft size={24} color="#dcb8ff" />
           </TouchableOpacity>
-          <View className="flex-row items-center gap-3">
-            <View className="relative">
+          <View className="flex-row items-center">
+            <View className="relative mr-3">
               <View className="w-10 h-10 rounded-full overflow-hidden border-2 border-secondary">
                 <Image source={{ uri: roomInfo.avatar }} className="w-full h-full" />
               </View>
@@ -94,8 +94,8 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
             </View>
           </View>
         </View>
-        <View className="flex-row items-center gap-6">
-          <TouchableOpacity>
+        <View className="flex-row items-center">
+          <TouchableOpacity className="mr-6">
             <Phone size={24} color="#a0a0a0" />
           </TouchableOpacity>
           <TouchableOpacity>

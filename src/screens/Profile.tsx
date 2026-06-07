@@ -50,8 +50,8 @@ export function Profile({ setScreen }: { setScreen: (s: AppScreen) => void }) {
             
             {/* Glow Toggle */}
             <View className="flex-row items-center justify-between p-4 border-b border-white/5">
-              <View className="flex-row items-center gap-4">
-                <View className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+              <View className="flex-row items-center">
+                <View className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center mr-4">
                   <Sparkles size={20} color="#dcb8ff" />
                 </View>
                 <Text className="text-base text-white">Glow Intensity</Text>
@@ -61,8 +61,8 @@ export function Profile({ setScreen }: { setScreen: (s: AppScreen) => void }) {
 
             {/* Notifications */}
             <TouchableOpacity className="w-full flex-row items-center justify-between p-4 border-b border-white/5">
-              <View className="flex-row items-center gap-4">
-                <View className="w-10 h-10 rounded-lg bg-secondary/10 flex items-center justify-center">
+              <View className="flex-row items-center">
+                <View className="w-10 h-10 rounded-lg bg-secondary/10 flex items-center justify-center mr-4">
                   <Bell size={20} color="#00fbfb" />
                 </View>
                 <Text className="text-base text-white">Notifications</Text>
@@ -72,8 +72,8 @@ export function Profile({ setScreen }: { setScreen: (s: AppScreen) => void }) {
 
             {/* Privacy */}
             <TouchableOpacity className="w-full flex-row items-center justify-between p-4 border-b border-white/5">
-              <View className="flex-row items-center gap-4">
-                <View className="w-10 h-10 rounded-lg bg-tertiary/10 flex items-center justify-center">
+              <View className="flex-row items-center">
+                <View className="w-10 h-10 rounded-lg bg-tertiary/10 flex items-center justify-center mr-4">
                   <Shield size={20} color="#ffb1c4" />
                 </View>
                 <Text className="text-base text-white">Privacy</Text>
@@ -83,8 +83,8 @@ export function Profile({ setScreen }: { setScreen: (s: AppScreen) => void }) {
 
             {/* Appearance */}
             <TouchableOpacity className="w-full flex-row items-center justify-between p-4 border-b border-white/5">
-              <View className="flex-row items-center gap-4">
-                <View className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+              <View className="flex-row items-center">
+                <View className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center mr-4">
                   <Palette size={20} color="#dcb8ff" />
                 </View>
                 <Text className="text-base text-white">Appearance</Text>
@@ -94,8 +94,8 @@ export function Profile({ setScreen }: { setScreen: (s: AppScreen) => void }) {
 
             {/* Logout */}
             <TouchableOpacity className="w-full flex-row items-center justify-between p-4">
-              <View className="flex-row items-center gap-4">
-                <View className="w-10 h-10 rounded-lg bg-red-500/10 flex items-center justify-center">
+              <View className="flex-row items-center">
+                <View className="w-10 h-10 rounded-lg bg-red-500/10 flex items-center justify-center mr-4">
                   <LogOut size={20} color="#ef4444" />
                 </View>
                 <Text className="text-base text-red-500">Logout</Text>

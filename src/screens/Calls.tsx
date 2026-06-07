@@ -77,8 +77,8 @@ export function Calls({ setScreen }: { setScreen: (s: AppScreen) => void }) {
         
         <View className="gap-4">
           {callHistory.map((call) => (
-            <TouchableOpacity key={call.id} className="bg-card rounded-2xl p-4 flex-row items-center gap-3 relative overflow-hidden border border-white/5">
-              <View className="relative">
+            <TouchableOpacity key={call.id} className="bg-card rounded-2xl p-4 flex-row items-center relative overflow-hidden border border-white/5">
+              <View className="relative mr-3">
                 <View className="w-12 h-12 rounded-full overflow-hidden border border-white/10">
                   <Image source={{ uri: call.avatar }} className="w-full h-full" />
                 </View>

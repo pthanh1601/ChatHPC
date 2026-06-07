@@ -14,6 +14,7 @@ import { Profile } from './screens/Profile';
 import { Calls } from './screens/Calls';
 import { Search } from './screens/Search';
 import { SafeScreen } from './components/SafeScreen';
+import { CreateRoom } from './screens/CreateRoom';
 
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState<AppScreen>('login');
@@ -27,11 +28,12 @@ export default function App() {
       {currentScreen === 'profile' && <Profile setScreen={setCurrentScreen} />}
       {currentScreen === 'calls' && <Calls setScreen={setCurrentScreen} />}
       {currentScreen === 'search' && <Search setScreen={setCurrentScreen} />}
+      {currentScreen === 'create_room' && <CreateRoom setScreen={setCurrentScreen} />}
       
       {/* Bottom Nav is persistent across all screens except maybe single/group chat depending on design, 
           but images show it on all screens. In group chat it might be slightly hidden by input, 
           let's follow the screens literally. */}
-      {currentScreen !== 'chat_single' && currentScreen !== 'login' && <BottomNav currentScreen={currentScreen} setScreen={setCurrentScreen} />}
+      {currentScreen !== 'chat_single' && currentScreen !== 'login' && currentScreen !== 'create_room' && <BottomNav currentScreen={currentScreen} setScreen={setCurrentScreen} />}
     </SafeScreen>
   );
 }

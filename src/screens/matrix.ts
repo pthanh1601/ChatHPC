@@ -35,7 +35,7 @@ export const loginToMatrix = async (username: string, password: string) => {
 
     return response;
   } catch (error) {
-    console.error("Matrix Login Error:", error);
+    console.log("Matrix Login Error:", error);
     throw error;
   }
 };
