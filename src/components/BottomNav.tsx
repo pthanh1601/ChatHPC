@@ -1,5 +1,5 @@
 import { View, Text, TouchableOpacity } from 'react-native';
-import { MessageCircle, Users, Compass, Menu } from 'lucide-react-native';
+import { MessageCircle, Phone, Menu } from 'lucide-react-native';
 import { BlurView } from 'expo-blur';
 import { AppScreen } from '../data';
 
@@ -21,19 +21,11 @@ export function BottomNav({ currentScreen, setScreen }: BottomNavProps) {
         </TouchableOpacity>
 
         <TouchableOpacity 
-          onPress={() => setScreen('chat_group')}
-          className={`flex-1 flex-col items-center justify-center ${currentScreen === 'chat_group' ? '' : 'opacity-70'}`}
+          onPress={() => setScreen('calls')}
+          className={`flex-1 flex-col items-center justify-center ${currentScreen === 'calls' ? '' : 'opacity-70'}`}
         >
-          <Users size={24} color={currentScreen === 'chat_group' ? '#dcb8ff' : '#a0a0a0'} />
-          <Text className={`text-[10px] mt-1 font-medium ${currentScreen === 'chat_group' ? 'text-primary' : 'text-muted'}`}>Groups</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity 
-          onPress={() => setScreen('chat_single')}
-          className={`flex-1 flex-col items-center justify-center ${currentScreen === 'chat_single' ? '' : 'opacity-70'}`}
-        >
-          <Compass size={24} color={currentScreen === 'chat_single' ? '#dcb8ff' : '#a0a0a0'} />
-          <Text className={`text-[10px] mt-1 font-medium ${currentScreen === 'chat_single' ? 'text-primary' : 'text-muted'}`}>Explore</Text>
+          <Phone size={24} color={currentScreen === 'calls' ? '#dcb8ff' : '#a0a0a0'} />
+          <Text className={`text-[10px] mt-1 font-medium ${currentScreen === 'calls' ? 'text-primary' : 'text-muted'}`}>Cuộc gọi</Text>
         </TouchableOpacity>
 
         <TouchableOpacity 

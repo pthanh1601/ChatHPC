@@ -11,6 +11,8 @@ import { ChatList } from './screens/ChatList';
 import { ChatSingle } from './screens/ChatSingle';
 import { ChatGroup } from './screens/ChatGroup';
 import { Profile } from './screens/Profile';
+import { Calls } from './screens/Calls';
+import { Search } from './screens/Search';
 import { SafeScreen } from './components/SafeScreen';
 
 export default function App() {
@@ -23,6 +25,8 @@ export default function App() {
       {currentScreen === 'chat_single' && <ChatSingle setScreen={setCurrentScreen} />}
       {currentScreen === 'chat_group' && <ChatGroup setScreen={setCurrentScreen} />}
       {currentScreen === 'profile' && <Profile setScreen={setCurrentScreen} />}
+      {currentScreen === 'calls' && <Calls setScreen={setCurrentScreen} />}
+      {currentScreen === 'search' && <Search setScreen={setCurrentScreen} />}
       
       {/* Bottom Nav is persistent across all screens except maybe single/group chat depending on design, 
           but images show it on all screens. In group chat it might be slightly hidden by input, 

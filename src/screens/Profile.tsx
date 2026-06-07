@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { View, Text, Image, TouchableOpacity, ScrollView, Switch, SafeAreaView, Platform, StatusBar } from 'react-native';
-import { Search, Sparkles, Bell, Shield, Palette, LogOut, ChevronRight } from 'lucide-react-native';
+import { Sparkles, Bell, Shield, Palette, LogOut, ChevronRight } from 'lucide-react-native';
 import { BlurView } from 'expo-blur';
 import { AppScreen, HERO_AVATAR, USER_AVATAR } from '../data';
 
@@ -18,9 +18,6 @@ export function Profile({ setScreen }: { setScreen: (s: AppScreen) => void }) {
               </View>
               <Text className="text-2xl font-bold text-primary">Profile</Text>
             </View>
-            <TouchableOpacity>
-              <Search size={24} color="#dcb8ff" />
-            </TouchableOpacity>
           </View>
         </SafeAreaView>
       </BlurView>

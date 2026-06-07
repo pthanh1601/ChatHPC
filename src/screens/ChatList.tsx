@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { View, Text, Image, TouchableOpacity, ScrollView, SafeAreaView, Platform, StatusBar } from 'react-native';
-import { Search, Plus, CheckCheck, MessageSquarePlus } from 'lucide-react-native';
+import { Plus, CheckCheck, MessageSquarePlus } from 'lucide-react-native';
 import { BlurView } from 'expo-blur';
 import { AppScreen, CONTACTS, USER_AVATAR } from '../data';
 
@@ -18,9 +18,6 @@ export function ChatList({ setScreen }: { setScreen: (s: AppScreen) => void }) {
               </TouchableOpacity>
               <Text className="text-2xl font-bold text-primary">Luminous</Text>
             </View>
-            <TouchableOpacity>
-              <Search size={24} color="#dcb8ff" />
-            </TouchableOpacity>
           </View>
         </SafeAreaView>
       </BlurView>
@@ -75,7 +72,7 @@ export function ChatList({ setScreen }: { setScreen: (s: AppScreen) => void }) {
 
         <View className="gap-4 pb-20">
           {/* Chat Card 1 */}
-          <TouchableOpacity onPress={() => setScreen('chat_single')} className="bg-card rounded-2xl p-4 flex-row items-center gap-3 relative overflow-hidden border border-white/5">
+          <TouchableOpacity onPress={() => setScreen('chat_single')} className="bg-card rounded-2xl p-4 pt-2 flex-row items-center gap-3 relative overflow-hidden border border-white/5">
             <View className="absolute top-0 left-0 w-1 h-full bg-secondary"></View>
             <View className="relative">
               <View className="w-14 h-14 rounded-full overflow-hidden border border-white/10">
