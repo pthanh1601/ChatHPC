@@ -9,14 +9,18 @@
     "web": "expo start --web"
   },
   "dependencies": {
+    "@react-native-async-storage/async-storage": "1.21.0",
     "base64-js": "^1.5.1",
+    "buffer": "^6.0.3",
     "expo": "~50.0.14",
     "expo-blur": "~12.9.2",
     "expo-status-bar": "~1.11.1",
     "lucide-react-native": "^0.363.0",
+    "matrix-js-sdk": "^41.7.0-rc.3",
     "nativewind": "^2.0.11",
     "react": "18.2.0",
     "react-native": "0.73.6",
+    "react-native-get-random-values": "~1.8.0",
     "react-native-svg": "14.1.0",
     "stacktrace-parser": "^0.1.10",
     "use-sync-external-store": "^1.2.0"
