@@ -1,26 +1,73 @@
-import { useState } from 'react';
-import { View, Text, Image, TouchableOpacity, ScrollView, SafeAreaView, Platform, StatusBar } from 'react-native';
+import { useState, useEffect } from 'react';
+import { View, Text, Image, TouchableOpacity, ScrollView } from 'react-native';
 import { Plus, CheckCheck, MessageSquarePlus } from 'lucide-react-native';
-import { BlurView } from 'expo-blur';
-import { AppScreen, CONTACTS, USER_AVATAR } from '../data';
+import { AppScreen, CONTACTS } from '../data';
+import { getMatrixClient } from './matrix';
+import { Header } from '../components/Header';
 
 export function ChatList({ setScreen }: { setScreen: (s: AppScreen) => void }) {
   const [blurIntensity, setBlurIntensity] = useState(0);
+  const [chats, setChats] = useState<any[]>([]);
+
+  useEffect(() => {
+    const client = getMatrixClient();
+    if (!client) return;
+
+    const updateChats = () => {
+      const rooms = client.getVisibleRooms();
+      const chatData = rooms.map(room => {
+        const timeline = room.timeline;
+        const lastEvent = timeline.length > 0 ? timeline[timeline.length - 1] : null;
+        
+        let lastMessage = 'Chưa có tin nhắn';
+        let time = '';
+
+        if (lastEvent) {
+          if (lastEvent.getType() === 'm.room.message') {
+            lastMessage = lastEvent.getContent().body || 'Tin nhắn mới';
+          } else {
+            lastMessage = 'Sự kiện hệ thống';
+          }
+          const date = new Date(lastEvent.getTs());
+          const hours = date.getHours().toString().padStart(2, '0');
+          const mins = date.getMinutes().toString().padStart(2, '0');
+          time = `${hours}:${mins}`;
+        }
+
+        let avatar = room.getAvatarUrl(client.getHomeserverUrl(), 56, 56, 'crop', false, false);
+        // Fallback ảnh mặc định nếu room chưa có avatar
+        if (!avatar) avatar = CONTACTS.aria.avatar; 
+
+        return {
+          id: room.roomId,
+          name: room.name || 'Phòng chat',
+          avatar,
+          lastMessage,
+          time,
+          unread: room.getUnreadNotificationCount('total') || 0,
+          timestamp: lastEvent ? lastEvent.getTs() : 0,
+        };
+      });
+
+      // Sắp xếp theo tin nhắn mới nhất
+      chatData.sort((a, b) => b.timestamp - a.timestamp);
+      setChats(chatData);
+    };
+
+    client.on('Room.timeline' as any, updateChats);
+    client.on('sync' as any, updateChats);
+    
+    updateChats();
+
+    return () => {
+      client.removeListener('Room.timeline' as any, updateChats);
+      client.removeListener('sync' as any, updateChats);
+    };
+  }, []);
 
   return (
     <View className="flex-1 bg-background">
-      <BlurView intensity={blurIntensity} tint="dark" className="absolute top-0 left-0 w-full z-50">
-        <SafeAreaView>
-          <View className="flex-row items-center justify-between px-5 py-3" style={{ paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0 }}>
-            <View className="flex-row items-center gap-3">
-              <TouchableOpacity className="w-10 h-10 rounded-full border-2 border-primary/30 overflow-hidden" onPress={() => setScreen('profile')}>
-                <Image source={{ uri: USER_AVATAR }} className="w-full h-full" />
-              </TouchableOpacity>
-              <Text className="text-2xl font-bold text-primary">Luminous</Text>
-            </View>
-          </View>
-        </SafeAreaView>
-      </BlurView>
+      <Header title="Luminous" blurIntensity={blurIntensity} setScreen={setScreen} />
 
       <ScrollView 
         className="flex-1 px-5" 
@@ -71,68 +118,34 @@ export function ChatList({ setScreen }: { setScreen: (s: AppScreen) => void }) {
         </View>
 
         <View className="gap-4 pb-20">
-          {/* Chat Card 1 */}
-          <TouchableOpacity onPress={() => setScreen('chat_single')} className="bg-card rounded-2xl p-4 pt-2 flex-row items-center gap-3 relative overflow-hidden border border-white/5">
-            <View className="absolute top-0 left-0 w-1 h-full bg-secondary"></View>
-            <View className="relative">
-              <View className="w-14 h-14 rounded-full overflow-hidden border border-white/10">
-                <Image source={{ uri: CONTACTS.aria.avatar }} className="w-full h-full" />
-              </View>
-              <View className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-secondary rounded-full border-2 border-background"></View>
-            </View>
-            <View className="flex-1 justify-center ml-1">
-              <View className="flex-row justify-between items-center mb-1.5">
-                <Text className="font-bold text-[15px] text-white" style={{ includeFontPadding: false }}>{CONTACTS.aria.name}</Text>
-                <Text className="text-[11px] text-primary font-semibold" style={{ includeFontPadding: false }}>12:45 PM</Text>
-              </View>
-              <View className="flex-row items-center justify-between gap-4">
-                <Text className="flex-1 text-sm text-gray-400" numberOfLines={1} style={{ includeFontPadding: false }}>The neural link is established. Ready for transmission?</Text>
-                <View className="bg-[#c40060] px-1.5 h-5 min-w-[20px] rounded-full flex items-center justify-center">
-                  <Text className="text-[10px] text-white font-bold" style={{ includeFontPadding: false }}>3</Text>
+          {chats.map((chat) => (
+            <TouchableOpacity key={chat.id} onPress={() => setScreen('chat_single')} className="bg-card rounded-2xl p-4 flex-row items-center gap-3 relative overflow-hidden border border-white/5">
+              {chat.unread > 0 && <View className="absolute top-0 left-0 w-1 h-full bg-secondary"></View>}
+              <View className="relative">
+                <View className="w-14 h-14 rounded-full overflow-hidden border border-white/10">
+                  <Image source={{ uri: chat.avatar }} className="w-full h-full" />
                 </View>
               </View>
-            </View>
-          </TouchableOpacity>
-
-          {/* Chat Card 2 */}
-          <TouchableOpacity onPress={() => setScreen('chat_single')} className="bg-card rounded-2xl p-4 flex-row items-center gap-3 relative border border-white/5">
-            <View className="relative">
-              <View className="w-14 h-14 rounded-full overflow-hidden border border-white/10">
-                <Image source={{ uri: CONTACTS.kael.avatar }} className="w-full h-full" />
-              </View>
-            </View>
-            <View className="flex-1 justify-center ml-1">
-              <View className="flex-row justify-between items-center mb-1.5">
-                <Text className="font-bold text-[15px] text-white" style={{ includeFontPadding: false }}>{CONTACTS.kael.name}</Text>
-                <Text className="text-[11px] text-gray-500 font-semibold" style={{ includeFontPadding: false }}>09:12 AM</Text>
-              </View>
-              <View className="flex-row items-center justify-between gap-4">
-                <Text className="flex-1 text-sm text-gray-400" numberOfLines={1} style={{ includeFontPadding: false }}>That design iteration looks sharp. Let's sync later.</Text>
-              </View>
-            </View>
-          </TouchableOpacity>
-
-          {/* Chat Card 3 */}
-          <TouchableOpacity className="bg-card rounded-2xl p-4 flex-row items-center gap-3 relative border border-white/5">
-            <View className="relative">
-              <View className="w-14 h-14 rounded-full overflow-hidden border border-white/10">
-                <Image source={{ uri: CONTACTS.zenix.avatar }} className="w-full h-full" />
-              </View>
-              <View className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-secondary rounded-full border-2 border-background"></View>
-            </View>
-            <View className="flex-1 justify-center ml-1">
-              <View className="flex-row justify-between items-center mb-1.5">
-                <Text className="font-bold text-[15px] text-white" style={{ includeFontPadding: false }}>{CONTACTS.zenix.name}</Text>
-                <Text className="text-[11px] text-gray-500 font-semibold" style={{ includeFontPadding: false }}>Yesterday</Text>
-              </View>
-              <View className="flex-row items-center justify-between gap-4">
-                <View className="flex-1 flex-row items-center gap-1.5">
-                  <CheckCheck size={14} color="#00fbfb" />
-                  <Text className="flex-1 text-sm text-gray-400" numberOfLines={1} style={{ includeFontPadding: false }}>Sent the encrypted file to your vault.</Text>
+              <View className="flex-1 justify-center ml-1">
+                <View className="flex-row justify-between items-center mb-1.5">
+                  <Text className="font-bold text-[15px] text-white" style={{ includeFontPadding: false }}>{chat.name}</Text>
+                  <Text className={`text-[11px] font-semibold ${chat.unread > 0 ? 'text-primary' : 'text-gray-500'}`} style={{ includeFontPadding: false }}>{chat.time}</Text>
+                </View>
+                <View className="flex-row items-center justify-between gap-4">
+                  <Text className="flex-1 text-sm text-gray-400" numberOfLines={1} style={{ includeFontPadding: false }}>{chat.lastMessage}</Text>
+                  {chat.unread > 0 && (
+                    <View className="bg-[#c40060] px-1.5 h-5 min-w-[20px] rounded-full flex items-center justify-center">
+                      <Text className="text-[10px] text-white font-bold" style={{ includeFontPadding: false }}>{chat.unread}</Text>
+                    </View>
+                  )}
                 </View>
               </View>
-            </View>
-          </TouchableOpacity>
+            </TouchableOpacity>
+          ))}
+          
+          {chats.length === 0 && (
+            <Text className="text-gray-500 text-center mt-4 text-sm font-medium">Chưa có tin nhắn nào</Text>
+          )}
         </View>
       </ScrollView>
 

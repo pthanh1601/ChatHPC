@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import { View, Text, Image, TouchableOpacity, TextInput, ScrollView, KeyboardAvoidingView, Platform, Keyboard, SafeAreaView, StatusBar } from 'react-native';
+import { View, Text, Image, TouchableOpacity, TextInput, ScrollView, KeyboardAvoidingView, Platform, Keyboard } from 'react-native';
 import { ArrowLeft, Info, Pin, X, PlusCircle, Smile, Send, CheckCheck, Plus } from 'lucide-react-native';
-import { BlurView } from 'expo-blur';
 import { AppScreen, CONTACTS, MEDIA } from '../data';
+import { Header } from '../components/Header';
 
 export function ChatGroup({ setScreen }: { setScreen: (s: AppScreen) => void }) {
   const [isKeyboardVisible, setKeyboardVisible] = useState(false);
@@ -25,32 +25,28 @@ export function ChatGroup({ setScreen }: { setScreen: (s: AppScreen) => void }) 
 
   return (
     <KeyboardAvoidingView className="flex-1 bg-background" behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <BlurView intensity={blurIntensity} tint="dark" className="absolute top-0 left-0 w-full z-50">
-        <SafeAreaView>
-          <View className="flex-row items-center justify-between px-5 py-3" style={{ paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0 }}>
-            <View className="flex-row items-center gap-4">
-              <TouchableOpacity onPress={() => setScreen('chat_list')}>
-                <ArrowLeft size={24} color="#dcb8ff" />
-              </TouchableOpacity>
-              <View className="flex-row -space-x-3">
-                <View className="h-10 w-10 rounded-full border-2 border-background overflow-hidden">
-                  <Image source={{ uri: CONTACTS.kael.avatar }} className="w-full h-full" />
-                </View>
-                <View className="h-10 w-10 rounded-full border-2 border-background overflow-hidden">
-                  <Image source={{ uri: CONTACTS.aria.avatar }} className="w-full h-full" />
-                </View>
-              </View>
-              <View>
-                <Text className="text-xl font-bold text-primary">Cyber Nexus</Text>
-                <Text className="text-xs text-gray-400">12 participants online</Text>
-              </View>
+      <Header blurIntensity={blurIntensity}>
+        <View className="flex-row items-center gap-4">
+          <TouchableOpacity onPress={() => setScreen('chat_list')}>
+            <ArrowLeft size={24} color="#dcb8ff" />
+          </TouchableOpacity>
+          <View className="flex-row -space-x-3">
+            <View className="h-10 w-10 rounded-full border-2 border-background overflow-hidden">
+              <Image source={{ uri: CONTACTS.kael.avatar }} className="w-full h-full" />
             </View>
-            <TouchableOpacity>
-              <Info size={24} color="#dcb8ff" />
-            </TouchableOpacity>
+            <View className="h-10 w-10 rounded-full border-2 border-background overflow-hidden">
+              <Image source={{ uri: CONTACTS.aria.avatar }} className="w-full h-full" />
+            </View>
           </View>
-        </SafeAreaView>
-      </BlurView>
+          <View>
+            <Text className="text-xl font-bold text-primary">Cyber Nexus</Text>
+            <Text className="text-xs text-gray-400">12 participants online</Text>
+          </View>
+        </View>
+        <TouchableOpacity>
+          <Info size={24} color="#dcb8ff" />
+        </TouchableOpacity>
+      </Header>
 
       <ScrollView 
         className="flex-1 px-5 relative" 

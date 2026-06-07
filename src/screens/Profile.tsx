@@ -1,26 +1,15 @@
 import { useState } from 'react';
-import { View, Text, Image, TouchableOpacity, ScrollView, Switch, SafeAreaView, Platform, StatusBar } from 'react-native';
+import { View, Text, Image, TouchableOpacity, ScrollView, Switch } from 'react-native';
 import { Sparkles, Bell, Shield, Palette, LogOut, ChevronRight } from 'lucide-react-native';
-import { BlurView } from 'expo-blur';
-import { AppScreen, HERO_AVATAR, USER_AVATAR } from '../data';
+import { AppScreen, HERO_AVATAR } from '../data';
+import { Header } from '../components/Header';
 
 export function Profile({ setScreen }: { setScreen: (s: AppScreen) => void }) {
   const [blurIntensity, setBlurIntensity] = useState(0);
 
   return (
     <View className="flex-1 bg-background">
-      <BlurView intensity={blurIntensity} tint="dark" className="absolute top-0 left-0 w-full z-50">
-        <SafeAreaView>
-          <View className="flex-row items-center justify-between px-5 py-3" style={{ paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0 }}>
-            <View className="flex-row items-center gap-3">
-              <View className="w-10 h-10 rounded-full overflow-hidden border border-primary/20">
-                <Image source={{ uri: USER_AVATAR }} className="w-full h-full" />
-              </View>
-              <Text className="text-2xl font-bold text-primary">Profile</Text>
-            </View>
-          </View>
-        </SafeAreaView>
-      </BlurView>
+      <Header title="Profile" blurIntensity={blurIntensity} />
 
       <ScrollView 
         className="flex-1 px-5" 

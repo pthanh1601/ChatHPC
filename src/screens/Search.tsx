@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { View, Text, Image, TouchableOpacity, ScrollView, Platform, StatusBar, TextInput, SafeAreaView, LayoutAnimation, UIManager } from 'react-native';
+import { View, Text, Image, TouchableOpacity, ScrollView, Platform, TextInput, LayoutAnimation, UIManager } from 'react-native';
 import { Search as SearchIcon, X, Clock, UserPlus } from 'lucide-react-native';
-import { BlurView } from 'expo-blur';
 import { AppScreen, CONTACTS } from '../data';
+import { Header } from '../components/Header';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -23,37 +23,33 @@ export function Search({ setScreen }: { setScreen: (s: AppScreen) => void }) {
 
   return (
     <View className="flex-1 bg-background">
-      <BlurView intensity={blurIntensity} tint="dark" className="absolute top-0 left-0 w-full z-50">
-        <SafeAreaView>
-          <View className="flex-row items-center justify-between px-5 py-3 min-h-[60px]" style={{ paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0 }}>
-            {!isSearchExpanded && (
-              <Text className="text-2xl font-bold text-primary mr-4">Tìm kiếm</Text>
-            )}
-            <View className={`flex-row items-center justify-end ${isSearchExpanded ? 'flex-1' : ''}`}>
-              {isSearchExpanded ? (
-                <View className="flex-1 flex-row items-center gap-3 bg-card rounded-2xl p-2 border border-white/10">
-                  <SearchIcon size={20} color="#a0a0a0" className="ml-2" />
-                  <TextInput 
-                    placeholder="Tìm kiếm đồng nghiệp, nhóm..." 
-                    placeholderTextColor="#a0a0a0"
-                    value={searchQuery}
-                    onChangeText={setSearchQuery}
-                    className="flex-1 text-base text-white p-0 h-8"
-                    autoFocus
-                  />
-                  <TouchableOpacity onPress={toggleSearch} className="p-1">
-                    <X size={18} color="#a0a0a0" />
-                  </TouchableOpacity>
-                </View>
-              ) : (
-                <TouchableOpacity onPress={toggleSearch}>
-                  <SearchIcon size={24} color="#dcb8ff" />
-                </TouchableOpacity>
-              )}
+      <Header blurIntensity={blurIntensity}>
+        {!isSearchExpanded && (
+          <Text className="text-2xl font-bold text-primary mr-4">Tìm kiếm</Text>
+        )}
+        <View className={`flex-row items-center justify-end ${isSearchExpanded ? 'flex-1' : ''}`}>
+          {isSearchExpanded ? (
+            <View className="flex-1 flex-row items-center gap-3 bg-card rounded-2xl p-2 border border-white/10">
+              <SearchIcon size={20} color="#a0a0a0" className="ml-2" />
+              <TextInput 
+                placeholder="Tìm kiếm đồng nghiệp, nhóm..." 
+                placeholderTextColor="#a0a0a0"
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                className="flex-1 text-base text-white p-0 h-8"
+                autoFocus
+              />
+              <TouchableOpacity onPress={toggleSearch} className="p-1">
+                <X size={18} color="#a0a0a0" />
+              </TouchableOpacity>
             </View>
-          </View>
-        </SafeAreaView>
-      </BlurView>
+          ) : (
+            <TouchableOpacity onPress={toggleSearch}>
+              <SearchIcon size={24} color="#dcb8ff" />
+            </TouchableOpacity>
+          )}
+        </View>
+      </Header>
 
       <ScrollView 
         className="flex-1 px-5" 

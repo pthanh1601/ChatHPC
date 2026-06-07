@@ -9,6 +9,13 @@ let matrixClient = sdk.createClient({
 
 export const getMatrixClient = () => matrixClient;
 
+// Lưu trữ ID phòng chat đang active để màn hình ChatSingle có thể sử dụng
+export let currentActiveRoomId: string | null = null;
+
+export const setCurrentActiveRoomId = (id: string | null) => {
+  currentActiveRoomId = id;
+};
+
 /**
  * Hàm đăng nhập vào Matrix Server
  */
