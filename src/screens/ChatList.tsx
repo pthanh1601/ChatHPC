@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { View, Text, Image, TouchableOpacity, ScrollView } from 'react-native';
 import { Plus, CheckCheck, MessageSquarePlus } from 'lucide-react-native';
 import { AppScreen, CONTACTS } from '../data';
-import { getMatrixClient } from './matrix';
+import { getMatrixClient, setCurrentActiveRoomId } from './matrix';
 import { Header } from '../components/Header';
 
 export function ChatList({ setScreen }: { setScreen: (s: AppScreen) => void }) {
@@ -117,7 +117,10 @@ export function ChatList({ setScreen }: { setScreen: (s: AppScreen) => void }) {
             </View>
 
             {[CONTACTS.aria, CONTACTS.kael, CONTACTS.zenix].map((contact, i) => (
-              <TouchableOpacity key={i} className="flex-col items-center gap-2 mr-4" onPress={() => setScreen('chat_single')}>
+              <TouchableOpacity key={i} className="flex-col items-center gap-2 mr-4" onPress={() => {
+                setCurrentActiveRoomId(null);
+                setScreen('chat_single');
+              }}>
                 <View className="w-16 h-16 rounded-full p-[2px] bg-primary">
                   <View className="w-full h-full rounded-full overflow-hidden border-2 border-background">
                     <Image source={{ uri: contact.avatar }} className="w-full h-full" />
@@ -151,7 +154,12 @@ export function ChatList({ setScreen }: { setScreen: (s: AppScreen) => void }) {
           {chats.map((chat) => (
             <TouchableOpacity 
               key={chat.id} 
-              onPress={() => !chat.isInvite && setScreen('chat_single')} 
+              onPress={() => {
+                if (!chat.isInvite) {
+                  setCurrentActiveRoomId(chat.id);
+                  setScreen('chat_single');
+                }
+              }} 
               activeOpacity={chat.isInvite ? 1 : 0.7}
               className={`bg-card rounded-2xl p-4 flex-col relative overflow-hidden border ${chat.isInvite ? 'border-primary/50 shadow-lg shadow-primary/10' : 'border-white/5'}`}
             >

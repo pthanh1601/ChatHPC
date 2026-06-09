@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
-import { View, Text, Image, TouchableOpacity, TextInput, ScrollView, KeyboardAvoidingView, Platform, Keyboard } from 'react-native';
+import { View, Text, Image, TouchableOpacity, TextInput, ScrollView, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
 import { ArrowLeft, Phone, Video, CheckCheck, Plus, Mic, Send } from 'lucide-react-native';
 import { AppScreen, CONTACTS, MEDIA } from '../data';
-import { getMatrixClient, currentActiveRoomId } from './matrix';
+import { getMatrixClient, currentActiveRoomId, matrixService } from './matrix';
 import { Header } from '../components/Header';
 
 export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void }) {
@@ -10,7 +10,15 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
   const [messages, setMessages] = useState<any[]>([]);
   const [inputText, setInputText] = useState('');
   const [roomInfo, setRoomInfo] = useState({ name: 'Đang tải...', avatar: CONTACTS.kael.avatar, members: 0 });
+  
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [typingUsers, setTypingUsers] = useState<string[]>([]);
+
   const scrollViewRef = useRef<ScrollView>(null);
+  const isHistoryLoadingRef = useRef(false);
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const prevContentHeight = useRef(0);
+  const shouldScrollRef = useRef(true);
 
   useEffect(() => {
     const client = getMatrixClient();
@@ -27,34 +35,74 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
       members: room.getJoinedMemberCount()
     });
 
-    const updateMessages = () => {
-      const myUserId = client.getUserId();
-      const timeline = room.timeline;
-      
-      const msgs = timeline
-        .filter(e => e.getType() === 'm.room.message')
-        .map(e => {
+    const getRoomMessages = () => {
+      return room.timeline
+        .filter(e => {
+          const type = e.getType();
+          return type === 'm.room.message' || type === 'm.room.encrypted';
+        })
+        .map((e: any) => {
           const date = new Date(e.getTs());
           const time = date.getHours().toString().padStart(2, '0') + ':' + date.getMinutes().toString().padStart(2, '0');
+          
+          let text = "Tin nhắn không có nội dung";
+          if (e.isEncrypted()) {
+            const clear = e.getClearContent();
+            text = clear ? (clear.body || text) : "🔒 Tin nhắn đang được giải mã...";
+          } else {
+            text = e.getContent().body || text;
+          }
+
           return {
             id: e.getId(),
             sender: e.getSender(),
-            isMe: e.getSender() === myUserId,
-            text: e.getContent().body,
+            isMe: e.getSender() === client.getUserId(),
+            text: text,
             time: time,
             senderName: room.getMember(e.getSender())?.name || e.getSender()
           };
         });
-
-      setMessages(msgs);
-      // Tự động cuộn xuống cuối khi có tin nhắn mới
-      setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100);
     };
 
-    updateMessages();
+    shouldScrollRef.current = true;
+    setMessages(getRoomMessages());
 
-    // Lắng nghe tin nhắn mới theo thời gian thực
-    client.on('Room.timeline' as any, updateMessages);
+    // Lắng nghe timeline
+    const onTimelineEvent = (event: any, roomObj: any, toStartOfTimeline: boolean) => {
+      if (event.getRoomId() !== currentActiveRoomId) return;
+      if (toStartOfTimeline && !isHistoryLoadingRef.current) return;
+
+      setMessages(getRoomMessages());
+      if (toStartOfTimeline) return;
+
+      if (event.getSender() === client.getUserId()) {
+        shouldScrollRef.current = true;
+      }
+      
+      if (room.timeline.length > 0) {
+        client.sendReadReceipt(room.timeline[room.timeline.length - 1]);
+      }
+    };
+
+    // Lắng nghe sự kiện giải mã xong
+    const onDecrypted = (event: any) => {
+      if (event.getRoomId() === currentActiveRoomId) {
+        // Ép Component Render lại ngay lập tức để dòng chữ khóa biến thành nội dung thật
+        setMessages(getRoomMessages());
+      }
+    };
+
+    // Lắng nghe người khác đang gõ phím
+    const onTyping = (event: any, member: any) => {
+      if (member.roomId !== currentActiveRoomId) return;
+      const members = room.getMembersWithMembership('join');
+      const typing = members.filter((m: any) => m.typing && m.userId !== client.getUserId());
+      setTypingUsers(typing.map((m: any) => m.name || m.userId.split(':')[0].replace('@', '')));
+    };
+
+    client.on('Room.timeline' as any, onTimelineEvent);
+    client.on('Event.decrypted' as any, onDecrypted);
+    client.on('RoomMember.typing' as any, onTyping);
 
     // Đánh dấu đã đọc nếu có tin nhắn mới nhất
     if (room.timeline.length > 0) {
@@ -62,16 +110,79 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
     }
 
     return () => {
-      client.removeListener('Room.timeline' as any, updateMessages);
+      client.removeListener('Room.timeline' as any, onTimelineEvent);
+      client.removeListener('Event.decrypted' as any, onDecrypted);
+      client.removeListener('RoomMember.typing' as any, onTyping);
     };
   }, []);
+
+  // Hàm tải thêm tin nhắn cũ
+  const loadMoreHistory = async () => {
+    const client = getMatrixClient();
+    if (!client || !currentActiveRoomId) return;
+    const room = client.getRoom(currentActiveRoomId);
+    
+    if (!isHistoryLoadingRef.current && room) {
+      const timeline = room.getLiveTimeline();
+      if (timeline.getPaginationToken("b")) {
+        isHistoryLoadingRef.current = true;
+        setIsLoadingHistory(true);
+        try {
+          await client.scrollback(room, 30);
+        } catch (err) {
+          console.log("Lỗi tải lịch sử:", err);
+        } finally {
+          setIsLoadingHistory(false);
+          isHistoryLoadingRef.current = false;
+        }
+      }
+    }
+  };
+
+  const handleScroll = (event: any) => {
+    const { contentOffset } = event.nativeEvent;
+    if (contentOffset.y < 50 && !isLoadingHistory) {
+      loadMoreHistory();
+    }
+  };
+
+  const handleContentSizeChange = (contentWidth: number, contentHeight: number) => {
+    if (isHistoryLoadingRef.current && prevContentHeight.current > 0) {
+      const diff = contentHeight - prevContentHeight.current;
+      scrollViewRef.current?.scrollTo({ y: diff, animated: false });
+    } else if (shouldScrollRef.current) {
+      scrollViewRef.current?.scrollToEnd({ animated: true });
+      shouldScrollRef.current = false;
+    }
+    prevContentHeight.current = contentHeight;
+  };
+
+  const handleInputChange = (text: string) => {
+    setInputText(text);
+    
+    const client = getMatrixClient();
+    if (client && currentActiveRoomId) {
+      client.sendTyping(currentActiveRoomId, true, 5000);
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = setTimeout(() => {
+        client.sendTyping(currentActiveRoomId, false);
+      }, 3000);
+    }
+  };
 
   const handleSend = () => {
     const client = getMatrixClient();
     if (!inputText.trim() || !client || !currentActiveRoomId) return;
 
-    client.sendTextMessage(currentActiveRoomId, inputText);
+    // Tắt trạng thái typing
+    client.sendTyping(currentActiveRoomId, false);
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+
+    // Gọi hàm bọc mã hóa E2EE thay vì dùng trực tiếp client
+    matrixService.sendMessage(currentActiveRoomId, inputText.trim());
+
     setInputText('');
+    shouldScrollRef.current = true;
   };
 
   return (
@@ -108,11 +219,16 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
         ref={scrollViewRef}
         className="flex-1 px-5" 
         showsVerticalScrollIndicator={false}
-        onScroll={(e) => setBlurIntensity(Math.min(100, Math.max(0, e.nativeEvent.contentOffset.y)))}
+        onScroll={(e) => {
+          setBlurIntensity(Math.min(100, Math.max(0, e.nativeEvent.contentOffset.y)));
+          handleScroll(e);
+        }}
         scrollEventThrottle={16}
-        onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
+        onContentSizeChange={handleContentSizeChange}
       >
         <View className="flex-col gap-6 pt-[120px] pb-4">
+          {isLoadingHistory && <ActivityIndicator size="small" color="#dcb8ff" className="my-2" />}
+          
           {messages.map((msg, index) => {
             return msg.isMe ? (
               <View key={msg.id || index} className="flex-col items-end max-w-[85%] self-end mb-2">
@@ -134,6 +250,14 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
               </View>
             );
           })}
+
+          {typingUsers.length > 0 && (
+            <View className="flex-row items-center mt-2 mb-2 ml-2">
+              <Text className="text-xs text-gray-400 italic">
+                {typingUsers.length > 2 ? "Nhiều người đang nhập..." : `${typingUsers.join(', ')} đang nhập...`}
+              </Text>
+            </View>
+          )}
         </View>
       </ScrollView>
 
@@ -147,7 +271,7 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
               placeholder="Nhập tin nhắn..." 
               placeholderTextColor="#a0a0a0" 
               value={inputText}
-              onChangeText={setInputText}
+              onChangeText={handleInputChange}
               className="w-full text-base text-white p-0" 
               style={{ 
                 includeFontPadding: false, 
