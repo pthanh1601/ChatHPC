@@ -1,4 +1,4 @@
-import { View, Text, TouchableOpacity } from 'react-native';
+import { View, Text, TouchableOpacity, LayoutAnimation, Platform, UIManager } from 'react-native';
 import { MessageCircle, Phone, Menu } from 'lucide-react-native';
 import { BlurView } from 'expo-blur';
 import { AppScreen } from '../data';
@@ -8,12 +8,24 @@ interface BottomNavProps {
   setScreen: (screen: AppScreen) => void;
 }
 
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
 export function BottomNav({ currentScreen, setScreen }: BottomNavProps) {
+  const handleNavigation = (screen: AppScreen) => {
+    if (currentScreen !== screen) {
+      // Thêm animation chuyển đổi màn hình mượt mà giữa các tab
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setScreen(screen);
+    }
+  };
+
   return (
     <View className="absolute bottom-6 left-5 right-5 z-50 shadow-lg shadow-[#8a2be2]/20">
       <BlurView intensity={40} tint="dark" className="flex-row justify-between items-center px-2 py-3 bg-surface/40 border border-white/10 rounded-full overflow-hidden">
         <TouchableOpacity 
-          onPress={() => setScreen('chat_list')}
+          onPress={() => handleNavigation('chat_list')}
           className={`flex-1 flex-col items-center justify-center ${currentScreen === 'chat_list' ? '' : 'opacity-70'}`}
         >
           <MessageCircle size={24} color={currentScreen === 'chat_list' ? '#dcb8ff' : '#a0a0a0'} />
@@ -21,7 +33,7 @@ export function BottomNav({ currentScreen, setScreen }: BottomNavProps) {
         </TouchableOpacity>
 
         <TouchableOpacity 
-          onPress={() => setScreen('calls')}
+          onPress={() => handleNavigation('calls')}
           className={`flex-1 flex-col items-center justify-center ${currentScreen === 'calls' ? '' : 'opacity-70'}`}
         >
           <Phone size={24} color={currentScreen === 'calls' ? '#dcb8ff' : '#a0a0a0'} />
@@ -29,7 +41,7 @@ export function BottomNav({ currentScreen, setScreen }: BottomNavProps) {
         </TouchableOpacity>
 
         <TouchableOpacity 
-          onPress={() => setScreen('profile')}
+          onPress={() => handleNavigation('profile')}
           className={`flex-1 flex-col items-center justify-center ${currentScreen === 'profile' ? '' : 'opacity-70'}`}
         >
           <Menu size={24} color={currentScreen === 'profile' ? '#dcb8ff' : '#a0a0a0'} />

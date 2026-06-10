@@ -1,66 +1,75 @@
 import { useState, useEffect } from 'react';
-import { View, Text, Image, TouchableOpacity, ScrollView } from 'react-native';
+import { View, Text, Image, TouchableOpacity, ScrollView, LayoutAnimation, Platform, UIManager } from 'react-native';
 import { Plus, CheckCheck, MessageSquarePlus } from 'lucide-react-native';
 import { AppScreen, CONTACTS } from '../data';
 import { getMatrixClient, setCurrentActiveRoomId } from './matrix';
 import { Header } from '../components/Header';
 
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
 export function ChatList({ setScreen }: { setScreen: (s: AppScreen) => void }) {
   const [blurIntensity, setBlurIntensity] = useState(0);
-  const [chats, setChats] = useState<any[]>([]);
+
+  const getInitialChats = () => {
+    const client = getMatrixClient();
+    if (!client) return [];
+    const rooms = client.getVisibleRooms();
+
+    const chatData = rooms.map(room => {
+      const timeline = room.timeline;
+      const lastEvent = timeline.length > 0 ? timeline[timeline.length - 1] : null;
+      const isInvite = room.getMyMembership() === 'invite';
+      
+      let lastMessage = 'Chưa có tin nhắn';
+      let time = '';
+
+      if (lastEvent) {
+        if (lastEvent.getType() === 'm.room.message') {
+          lastMessage = lastEvent.getContent().body || 'Tin nhắn mới';
+        } else {
+          lastMessage = 'Sự kiện hệ thống';
+        }
+        const date = new Date(lastEvent.getTs());
+        const hours = date.getHours().toString().padStart(2, '0');
+        const mins = date.getMinutes().toString().padStart(2, '0');
+        time = `${hours}:${mins}`;
+      }
+      
+      if (isInvite) {
+        lastMessage = 'Bạn nhận được lời mời tham gia nhóm';
+        time = time || 'Mới';
+      }
+
+      let avatar = room.getAvatarUrl(client.getHomeserverUrl(), 56, 56, 'crop', false, false);
+      if (!avatar) avatar = CONTACTS.aria.avatar; 
+
+      return {
+        id: room.roomId,
+        name: room.name || 'Phòng chat',
+        avatar,
+        lastMessage,
+        time,
+        unread: isInvite ? 1 : (room.getUnreadNotificationCount('total') || 0),
+        timestamp: lastEvent ? lastEvent.getTs() : (isInvite ? Date.now() : 0),
+        isInvite
+      };
+    });
+
+    chatData.sort((a, b) => b.timestamp - a.timestamp);
+    return chatData;
+  };
+
+  // Khởi tạo state ngay từ đầu để tránh màn hình bị nháy trống trơn lúc mới load
+  const [chats, setChats] = useState<any[]>(getInitialChats);
 
   useEffect(() => {
     const client = getMatrixClient();
     if (!client) return;
 
     const updateChats = () => {
-      const rooms = client.getVisibleRooms();
-
-      const chatData = rooms.map(room => {
-        const timeline = room.timeline;
-        const lastEvent = timeline.length > 0 ? timeline[timeline.length - 1] : null;
-        const isInvite = room.getMyMembership() === 'invite';
-        
-        let lastMessage = 'Chưa có tin nhắn';
-        let time = '';
-
-        if (lastEvent) {
-          if (lastEvent.getType() === 'm.room.message') {
-            lastMessage = lastEvent.getContent().body || 'Tin nhắn mới';
-          } else {
-            lastMessage = 'Sự kiện hệ thống';
-          }
-          const date = new Date(lastEvent.getTs());
-          const hours = date.getHours().toString().padStart(2, '0');
-          const mins = date.getMinutes().toString().padStart(2, '0');
-          time = `${hours}:${mins}`;
-        }
-        
-        // Thay đổi nội dung nếu đây là một lời mời
-        if (isInvite) {
-          lastMessage = 'Bạn nhận được lời mời tham gia nhóm';
-          time = time || 'Mới';
-        }
-
-        let avatar = room.getAvatarUrl(client.getHomeserverUrl(), 56, 56, 'crop', false, false);
-        // Fallback ảnh mặc định nếu room chưa có avatar
-        if (!avatar) avatar = CONTACTS.aria.avatar; 
-
-        return {
-          id: room.roomId,
-          name: room.name || 'Phòng chat',
-          avatar,
-          lastMessage,
-          time,
-          unread: isInvite ? 1 : (room.getUnreadNotificationCount('total') || 0),
-          timestamp: lastEvent ? lastEvent.getTs() : (isInvite ? Date.now() : 0),
-          isInvite
-        };
-      });
-
-      // Sắp xếp theo tin nhắn mới nhất
-      chatData.sort((a, b) => b.timestamp - a.timestamp);
-      setChats(chatData);
+      setChats(getInitialChats());
     };
 
     client.on('Room.timeline' as any, updateChats);
@@ -97,7 +106,7 @@ export function ChatList({ setScreen }: { setScreen: (s: AppScreen) => void }) {
 
   return (
     <View className="flex-1 bg-background">
-      <Header title="Luminous" blurIntensity={blurIntensity} setScreen={setScreen} />
+      <Header title="Tin nhắn" blurIntensity={blurIntensity} setScreen={setScreen} />
 
       <ScrollView 
         className="flex-1 px-5" 
@@ -119,6 +128,8 @@ export function ChatList({ setScreen }: { setScreen: (s: AppScreen) => void }) {
             {[CONTACTS.aria, CONTACTS.kael, CONTACTS.zenix].map((contact, i) => (
               <TouchableOpacity key={i} className="flex-col items-center gap-2 mr-4" onPress={() => {
                 setCurrentActiveRoomId(null);
+                // Thêm animation mượt mà khi chuyển màn hình
+                LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
                 setScreen('chat_single');
               }}>
                 <View className="w-16 h-16 rounded-full p-[2px] bg-primary">
@@ -157,6 +168,7 @@ export function ChatList({ setScreen }: { setScreen: (s: AppScreen) => void }) {
               onPress={() => {
                 if (!chat.isInvite) {
                   setCurrentActiveRoomId(chat.id);
+                  LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
                   setScreen('chat_single');
                 }
               }} 

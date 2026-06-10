@@ -1,17 +1,66 @@
 import { useState, useEffect, useRef } from 'react';
-import { View, Text, Image, TouchableOpacity, TextInput, ScrollView, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
-import { ArrowLeft, Phone, Video, CheckCheck, Plus, Mic, Send } from 'lucide-react-native';
+import { View, Text, Image, TouchableOpacity, TextInput, ScrollView, KeyboardAvoidingView, Platform, ActivityIndicator, LayoutAnimation, UIManager, Keyboard } from 'react-native';
+import { ArrowLeft, Phone, Video, CheckCheck, Plus, Mic, Send, ChevronDown } from 'lucide-react-native';
 import { AppScreen, CONTACTS, MEDIA } from '../data';
 import { getMatrixClient, currentActiveRoomId, matrixService } from './matrix';
 import { Header } from '../components/Header';
 
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
 export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void }) {
   const [blurIntensity, setBlurIntensity] = useState(0);
-  const [messages, setMessages] = useState<any[]>([]);
   const [inputText, setInputText] = useState('');
-  const [roomInfo, setRoomInfo] = useState({ name: 'Đang tải...', avatar: CONTACTS.kael.avatar, members: 0 });
   
+  const getRoomMessages = () => {
+    const client = getMatrixClient();
+    if (!client || !currentActiveRoomId) return [];
+    const room = client.getRoom(currentActiveRoomId);
+    if (!room) return [];
+
+    return room.timeline
+      .filter(e => {
+        const type = e.getType();
+        return type === 'm.room.message' || type === 'm.room.encrypted';
+      })
+      .map((e: any) => {
+        const date = new Date(e.getTs());
+        const time = date.getHours().toString().padStart(2, '0') + ':' + date.getMinutes().toString().padStart(2, '0');
+        
+        let text = "Tin nhắn không có nội dung";
+        if (e.isEncrypted()) {
+          const clear = e.getClearContent();
+          text = clear ? (clear.body || text) : "🔒 Tin nhắn đang được giải mã...";
+        } else {
+          text = e.getContent().body || text;
+        }
+
+        return {
+          id: e.getId(),
+          sender: e.getSender(),
+          isMe: e.getSender() === client.getUserId(),
+          text: text,
+          time: time,
+          senderName: room.getMember(e.getSender())?.name || e.getSender()
+        };
+      });
+  };
+
+  // Khởi tạo state tức thì, chặn chớp trắng (flicker)
+  const [messages, setMessages] = useState<any[]>(getRoomMessages);
+  const [roomInfo, setRoomInfo] = useState(() => {
+    const client = getMatrixClient();
+    const room = client?.getRoom(currentActiveRoomId || '');
+    return {
+      name: room?.name || 'Phòng chat',
+      avatar: room?.getAvatarUrl(client?.getHomeserverUrl() || '', 96, 96, 'crop', false, false) || CONTACTS.kael.avatar,
+      members: room?.getJoinedMemberCount() || 0
+    };
+  });
+
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [showScrollDown, setShowScrollDown] = useState(false);
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
 
   const scrollViewRef = useRef<ScrollView>(null);
@@ -19,6 +68,8 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const prevContentHeight = useRef(0);
   const shouldScrollRef = useRef(true);
+  const isNearBottomRef = useRef(true);
+  const isInitialMountRef = useRef(true); // Biến để kiểm tra lần render đầu tiên
 
   useEffect(() => {
     const client = getMatrixClient();
@@ -27,58 +78,23 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
     const room = client.getRoom(currentActiveRoomId);
     if (!room) return;
 
-    // Load thông tin phòng
-    let avatar = room.getAvatarUrl(client.getHomeserverUrl(), 96, 96, 'crop', false, false);
-    setRoomInfo({
-      name: room.name || 'Phòng chat',
-      avatar: avatar || CONTACTS.kael.avatar,
-      members: room.getJoinedMemberCount()
-    });
-
-    const getRoomMessages = () => {
-      return room.timeline
-        .filter(e => {
-          const type = e.getType();
-          return type === 'm.room.message' || type === 'm.room.encrypted';
-        })
-        .map((e: any) => {
-          const date = new Date(e.getTs());
-          const time = date.getHours().toString().padStart(2, '0') + ':' + date.getMinutes().toString().padStart(2, '0');
-          
-          let text = "Tin nhắn không có nội dung";
-          if (e.isEncrypted()) {
-            const clear = e.getClearContent();
-            text = clear ? (clear.body || text) : "🔒 Tin nhắn đang được giải mã...";
-          } else {
-            text = e.getContent().body || text;
-          }
-
-          return {
-            id: e.getId(),
-            sender: e.getSender(),
-            isMe: e.getSender() === client.getUserId(),
-            text: text,
-            time: time,
-            senderName: room.getMember(e.getSender())?.name || e.getSender()
-          };
-        });
-    };
-
     shouldScrollRef.current = true;
-    setMessages(getRoomMessages());
 
     // Lắng nghe timeline
     const onTimelineEvent = (event: any, roomObj: any, toStartOfTimeline: boolean) => {
       if (event.getRoomId() !== currentActiveRoomId) return;
       if (toStartOfTimeline && !isHistoryLoadingRef.current) return;
 
+      if (!toStartOfTimeline) {
+        // Tự động cuộn xuống nếu đang ở gần cuối trang, hoặc nếu mình là người gửi tin
+        if (isNearBottomRef.current || event.getSender() === client.getUserId()) {
+          shouldScrollRef.current = true;
+        }
+      }
+      
       setMessages(getRoomMessages());
       if (toStartOfTimeline) return;
 
-      if (event.getSender() === client.getUserId()) {
-        shouldScrollRef.current = true;
-      }
-      
       if (room.timeline.length > 0) {
         client.sendReadReceipt(room.timeline[room.timeline.length - 1]);
       }
@@ -87,6 +103,10 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
     // Lắng nghe sự kiện giải mã xong
     const onDecrypted = (event: any) => {
       if (event.getRoomId() === currentActiveRoomId) {
+        // Vẫn giữ ở cuối trang khi giải mã xong nếu người dùng đang ở cuối trang
+        if (isNearBottomRef.current) {
+          shouldScrollRef.current = true;
+        }
         // Ép Component Render lại ngay lập tức để dòng chữ khóa biến thành nội dung thật
         setMessages(getRoomMessages());
       }
@@ -116,6 +136,19 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
     };
   }, []);
 
+  // CHỈ cuộn xuống cuối cùng khi bàn phím bật lên NẾU bạn đang ở gần tin nhắn mới nhất
+  useEffect(() => {
+    const keyboardListener = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      () => {
+        if (isNearBottomRef.current) {
+          setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100);
+        }
+      }
+    );
+    return () => keyboardListener.remove();
+  }, []);
+
   // Hàm tải thêm tin nhắn cũ
   const loadMoreHistory = async () => {
     const client = getMatrixClient();
@@ -140,9 +173,21 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
   };
 
   const handleScroll = (event: any) => {
-    const { contentOffset } = event.nativeEvent;
+    const { contentOffset, layoutMeasurement, contentSize } = event.nativeEvent;
+    
     if (contentOffset.y < 50 && !isLoadingHistory) {
       loadMoreHistory();
+    }
+
+    // Tính toán khoảng cách tới tin nhắn mới nhất
+    const distanceFromBottom = contentSize.height - layoutMeasurement.height - contentOffset.y;
+    isNearBottomRef.current = distanceFromBottom <= 150;
+    
+    // Hiện/ẩn nút cuộn xuống giống FB Messenger
+    if (distanceFromBottom > 150) {
+      if (!showScrollDown) setShowScrollDown(true);
+    } else {
+      if (showScrollDown) setShowScrollDown(false);
     }
   };
 
@@ -151,8 +196,10 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
       const diff = contentHeight - prevContentHeight.current;
       scrollViewRef.current?.scrollTo({ y: diff, animated: false });
     } else if (shouldScrollRef.current) {
-      scrollViewRef.current?.scrollToEnd({ animated: true });
+      // Nhảy thẳng xuống ngay lập tức trong lần load đầu tiên, không hiện animation chậm
+      scrollViewRef.current?.scrollToEnd({ animated: !isInitialMountRef.current });
       shouldScrollRef.current = false;
+      isInitialMountRef.current = false;
     }
     prevContentHeight.current = contentHeight;
   };
@@ -189,7 +236,10 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
     <KeyboardAvoidingView className="flex-1 bg-background relative" behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <Header blurIntensity={blurIntensity}>
         <View className="flex-row items-center">
-          <TouchableOpacity onPress={() => setScreen('chat_list')} className="mr-4">
+          <TouchableOpacity onPress={() => {
+            LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+            setScreen('chat_list');
+          }} className="mr-4">
             <ArrowLeft size={24} color="#dcb8ff" />
           </TouchableOpacity>
           <View className="flex-row items-center">
@@ -225,6 +275,8 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
         }}
         scrollEventThrottle={16}
         onContentSizeChange={handleContentSizeChange}
+        keyboardDismissMode="interactive"
+        keyboardShouldPersistTaps="handled"
       >
         <View className="flex-col gap-6 pt-[120px] pb-4">
           {isLoadingHistory && <ActivityIndicator size="small" color="#dcb8ff" className="my-2" />}
@@ -261,6 +313,17 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
         </View>
       </ScrollView>
 
+      {/* Nút cuộn xuống cuối (Messenger style) */}
+      {showScrollDown && (
+        <TouchableOpacity 
+          className="absolute right-5 w-10 h-10 bg-surface rounded-full flex items-center justify-center border border-white/10 shadow-xl z-[100]"
+          style={{ bottom: 90 }}
+          onPress={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
+        >
+          <ChevronDown size={24} color="#dcb8ff" />
+        </TouchableOpacity>
+      )}
+
       <View className="w-full z-50 px-5 pb-6 pt-4 bg-background/90">
         <View className="bg-card rounded-full p-1.5 flex-row items-center border border-white/10">
           <TouchableOpacity className="w-12 h-12 flex items-center justify-center">
@@ -272,6 +335,13 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
               placeholderTextColor="#a0a0a0" 
               value={inputText}
               onChangeText={handleInputChange}
+              onFocus={() => {
+                if (isNearBottomRef.current) {
+                  setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100);
+                }
+              }}
+              multiline={true}
+              blurOnSubmit={false}
               className="w-full text-base text-white p-0" 
               style={{ 
                 includeFontPadding: false, 

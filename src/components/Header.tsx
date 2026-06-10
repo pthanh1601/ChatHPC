@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, Image, TouchableOpacity, SafeAreaView, Platform, StatusBar, Modal, Pressable } from 'react-native';
+import { View, Text, Image, TouchableOpacity, SafeAreaView, Platform, StatusBar, Modal, Pressable, LayoutAnimation } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { Plus, X, MessageSquarePlus, List } from 'lucide-react-native';
 import { AppScreen, USER_AVATAR } from '../data';
@@ -24,7 +24,10 @@ export function Header({ title, blurIntensity, setScreen, children, rightCompone
               <>
                 <View className="flex-1 items-start justify-center">
                   {setScreen ? (
-                    <TouchableOpacity className="w-10 h-10 rounded-full border-2 border-primary/30 overflow-hidden" onPress={() => setScreen('profile')}>
+                    <TouchableOpacity className="w-10 h-10 rounded-full border-2 border-primary/30 overflow-hidden" onPress={() => {
+                      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                      setScreen('profile');
+                    }}>
                       <Image source={{ uri: USER_AVATAR }} className="w-full h-full" />
                     </TouchableOpacity>
                   ) : (
@@ -80,7 +83,8 @@ export function Header({ title, blurIntensity, setScreen, children, rightCompone
                 className="bg-card p-4 rounded-2xl flex-row items-center border border-white/5"
                 onPress={() => {
                   setModalVisible(false);
-                  if (setScreen) setScreen('create_room' as AppScreen);
+                  LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                  if (setScreen) setTimeout(() => setScreen('create_room' as AppScreen), 50);
                 }}
               >
                 <View className="w-12 h-12 bg-primary/20 rounded-full flex items-center justify-center mr-4">
@@ -96,7 +100,8 @@ export function Header({ title, blurIntensity, setScreen, children, rightCompone
                 className="bg-card p-4 rounded-2xl flex-row items-center border border-white/5"
                 onPress={() => {
                   setModalVisible(false);
-                  if (setScreen) setScreen('chat_list');
+                  LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                  if (setScreen) setTimeout(() => setScreen('chat_list'), 50);
                 }}
               >
                 <View className="w-12 h-12 bg-secondary/20 rounded-full flex items-center justify-center mr-4">

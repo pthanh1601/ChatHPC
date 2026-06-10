@@ -14,7 +14,7 @@
 		96905EF65AED1B983A6B3ABC /* libPods-ChatHPC.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 58EEBF8E8E6FB1BC6CAF49B5 /* libPods-ChatHPC.a */; };
 		B18059E884C0ABDD17F3DC3D /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAC715A2D49A985799AEE119 /* ExpoModulesProvider.swift */; };
 		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
-		C3E7163563EE49BC88D78D72 /* noop-file.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25AB88C3C9E24ACBAB10EEA9 /* noop-file.swift */; };
+		C53C8FE81B3B4A7B974CEE8E /* noop-file.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D5A7B94517C4329AB113A59 /* noop-file.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -24,8 +24,8 @@
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = ChatHPC/Images.xcassets; sourceTree = "<group>"; };
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = ChatHPC/Info.plist; sourceTree = "<group>"; };
 		13B07FB71A68108700A75B9A /* main.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = main.m; path = ChatHPC/main.m; sourceTree = "<group>"; };
-		25AB88C3C9E24ACBAB10EEA9 /* noop-file.swift */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 4; includeInIndex = 0; lastKnownFileType = sourcecode.swift; name = "noop-file.swift"; path = "ChatHPC/noop-file.swift"; sourceTree = "<group>"; };
-		42CD74D943F047C2AB700596 /* ChatHPC-Bridging-Header.h */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 4; includeInIndex = 0; lastKnownFileType = sourcecode.c.h; name = "ChatHPC-Bridging-Header.h"; path = "ChatHPC/ChatHPC-Bridging-Header.h"; sourceTree = "<group>"; };
+		1D5A7B94517C4329AB113A59 /* noop-file.swift */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 4; includeInIndex = 0; lastKnownFileType = sourcecode.swift; name = "noop-file.swift"; path = "ChatHPC/noop-file.swift"; sourceTree = "<group>"; };
+		1EE9D145764F43E1B3301EAD /* ChatHPC-Bridging-Header.h */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 4; includeInIndex = 0; lastKnownFileType = sourcecode.c.h; name = "ChatHPC-Bridging-Header.h"; path = "ChatHPC/ChatHPC-Bridging-Header.h"; sourceTree = "<group>"; };
 		58EEBF8E8E6FB1BC6CAF49B5 /* libPods-ChatHPC.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-ChatHPC.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		6C2E3173556A471DD304B334 /* Pods-ChatHPC.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-ChatHPC.debug.xcconfig"; path = "Target Support Files/Pods-ChatHPC/Pods-ChatHPC.debug.xcconfig"; sourceTree = "<group>"; };
 		7A4D352CD337FB3A3BF06240 /* Pods-ChatHPC.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-ChatHPC.release.xcconfig"; path = "Target Support Files/Pods-ChatHPC/Pods-ChatHPC.release.xcconfig"; sourceTree = "<group>"; };
@@ -57,8 +57,8 @@
 				13B07FB61A68108700A75B9A /* Info.plist */,
 				13B07FB71A68108700A75B9A /* main.m */,
 				AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */,
-				25AB88C3C9E24ACBAB10EEA9 /* noop-file.swift */,
-				42CD74D943F047C2AB700596 /* ChatHPC-Bridging-Header.h */,
+				1D5A7B94517C4329AB113A59 /* noop-file.swift */,
+				1EE9D145764F43E1B3301EAD /* ChatHPC-Bridging-Header.h */,
 			);
 			name = ChatHPC;
 			sourceTree = "<group>";
@@ -144,13 +144,13 @@
 			buildConfigurationList = 13B07F931A680F5B00A75B9A /* Build configuration list for PBXNativeTarget "ChatHPC" */;
 			buildPhases = (
 				08A4A3CD28434E44B6B9DE2E /* [CP] Check Pods Manifest.lock */,
-				BB3AE930DAFFEBBEE9A40B10 /* [Expo] Configure project */,
+				97E70D48A8B54984A38B059C /* [Expo] Configure project */,
 				13B07F871A680F5B00A75B9A /* Sources */,
 				13B07F8C1A680F5B00A75B9A /* Frameworks */,
 				13B07F8E1A680F5B00A75B9A /* Resources */,
 				00DD1BFF1BD5951E006B06BC /* Bundle React Native code and images */,
 				800E24972A6A228C8D4807E9 /* [CP] Copy Pods Resources */,
-				DCEE4D564232BDE844693BC8 /* [CP] Embed Pods Frameworks */,
+				A87310CB548E9DB88DA399CC /* [CP] Embed Pods Frameworks */,
 			);
 			buildRules = (
 			);
@@ -267,7 +267,7 @@
 			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-ChatHPC/Pods-ChatHPC-resources.sh\"\n";
 			showEnvVarsInLog = 0;
 		};
-		BB3AE930DAFFEBBEE9A40B10 /* [Expo] Configure project */ = {
+		97E70D48A8B54984A38B059C /* [Expo] Configure project */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
@@ -286,7 +286,7 @@
 			shellPath = /bin/sh;
 			shellScript = "# This script configures Expo modules and generates the modules provider file.\nbash -l -c \"./Pods/Target\\ Support\\ Files/Pods-ChatHPC/expo-configure-project.sh\"\n";
 		};
-		DCEE4D564232BDE844693BC8 /* [CP] Embed Pods Frameworks */ = {
+		A87310CB548E9DB88DA399CC /* [CP] Embed Pods Frameworks */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -314,7 +314,7 @@
 				13B07FBC1A68108700A75B9A /* AppDelegate.mm in Sources */,
 				13B07FC11A68108700A75B9A /* main.m in Sources */,
 				B18059E884C0ABDD17F3DC3D /* ExpoModulesProvider.swift in Sources */,
-				C3E7163563EE49BC88D78D72 /* noop-file.swift in Sources */,
+				C53C8FE81B3B4A7B974CEE8E /* noop-file.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

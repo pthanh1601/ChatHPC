@@ -146,6 +146,8 @@ export function ChatGroup({ setScreen }: { setScreen: (s: AppScreen) => void }) 
             <TextInput 
               placeholder="Type a message..." 
               placeholderTextColor="#a0a0a0" 
+              multiline={true}
+              blurOnSubmit={false}
               className="w-full text-base text-white p-0"
               style={{ 
                 includeFontPadding: false, 
