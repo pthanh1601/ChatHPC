@@ -45,13 +45,16 @@ export function ChatList({ setScreen }: { setScreen: (s: AppScreen) => void }) {
       let avatar = room.getAvatarUrl(client.getHomeserverUrl(), 56, 56, 'crop', false, false);
       if (!avatar) avatar = CONTACTS.aria.avatar; 
 
+      // Lấy số lượng tin nhắn chưa đọc (Bao gồm cả thông báo tag/highlight)
+      const unreadCount = room.getUnreadNotificationCount('total') || room.getUnreadNotificationCount('highlight') || 0;
+
       return {
         id: room.roomId,
         name: room.name || 'Phòng chat',
         avatar,
         lastMessage,
         time,
-        unread: isInvite ? 1 : (room.getUnreadNotificationCount('total') || 0),
+        unread: isInvite ? 1 : unreadCount,
         timestamp: lastEvent ? lastEvent.getTs() : (isInvite ? Date.now() : 0),
         isInvite
       };
@@ -173,25 +176,27 @@ export function ChatList({ setScreen }: { setScreen: (s: AppScreen) => void }) {
                 }
               }} 
               activeOpacity={chat.isInvite ? 1 : 0.7}
-              className={`bg-card rounded-2xl p-4 flex-col relative overflow-hidden border ${chat.isInvite ? 'border-primary/50 shadow-lg shadow-primary/10' : 'border-white/5'}`}
+              className={`rounded-2xl p-4 flex-col relative overflow-hidden border ${chat.isInvite ? 'bg-card border-primary/50 shadow-lg shadow-primary/10' : (chat.unread > 0 ? 'bg-surface border-white/10' : 'bg-card border-white/5')}`}
             >
               <View className="flex-row items-center">
-                {chat.unread > 0 && !chat.isInvite && <View className="absolute top-0 left-0 w-1 h-full bg-secondary"></View>}
-                <View className="relative mr-3">
+                {chat.unread > 0 && !chat.isInvite && (
+                  <View className="absolute top-0 left-0 w-1.5 h-full bg-primary rounded-r-full z-10" />
+                )}
+                <View className={`relative mr-3 ${chat.unread > 0 && !chat.isInvite ? 'ml-3' : ''}`}>
                   <View className="w-14 h-14 rounded-full overflow-hidden border border-white/10">
                     <Image source={{ uri: chat.avatar }} className="w-full h-full" />
                   </View>
                 </View>
                 <View className="flex-1 justify-center ml-1">
                   <View className="flex-row justify-between items-center mb-1.5">
-                    <Text className="font-bold text-[15px] text-white" style={{ includeFontPadding: false }}>{chat.name}</Text>
-                    <Text className={`text-[11px] font-semibold ${chat.unread > 0 || chat.isInvite ? 'text-primary' : 'text-gray-500'}`} style={{ includeFontPadding: false }}>{chat.time}</Text>
+                    <Text className={`text-[15px] ${chat.unread > 0 || chat.isInvite ? 'font-bold text-white' : 'font-semibold text-gray-300'}`} style={{ includeFontPadding: false }}>{chat.name}</Text>
+                    <Text className={`text-[11px] ${chat.unread > 0 || chat.isInvite ? 'font-bold text-primary' : 'font-medium text-gray-500'}`} style={{ includeFontPadding: false }}>{chat.time}</Text>
                   </View>
                   <View className="flex-row items-center justify-between">
-                    <Text className={`flex-1 text-sm mr-4 ${chat.isInvite ? 'text-primary font-medium' : 'text-gray-400'}`} numberOfLines={1} style={{ includeFontPadding: false }}>{chat.lastMessage}</Text>
+                    <Text className={`flex-1 text-sm mr-4 ${chat.isInvite ? 'text-primary font-bold' : (chat.unread > 0 ? 'text-white font-bold' : 'text-gray-400 font-normal')}`} numberOfLines={1} style={{ includeFontPadding: false }}>{chat.lastMessage}</Text>
                     {chat.unread > 0 && !chat.isInvite && (
-                      <View className="bg-[#c40060] px-1.5 h-5 min-w-[20px] rounded-full flex items-center justify-center">
-                        <Text className="text-[10px] text-white font-bold" style={{ includeFontPadding: false }}>{chat.unread}</Text>
+                      <View className="bg-primary px-1.5 h-5 min-w-[20px] rounded-full flex items-center justify-center shadow-md shadow-primary/30">
+                        <Text className="text-[10px] text-background font-bold" style={{ includeFontPadding: false }}>{chat.unread}</Text>
                       </View>
                     )}
                   </View>
