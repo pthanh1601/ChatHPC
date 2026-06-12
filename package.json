@@ -9,6 +9,7 @@
     "web": "expo start --web"
   },
   "dependencies": {
+    "@config-plugins/react-native-webrtc": "^8.0.0",
     "@matrix-org/matrix-sdk-crypto-js": "^0.1.4",
     "@matrix-org/olm": "^3.2.15",
     "@react-native-async-storage/async-storage": "1.21.0",
@@ -27,6 +28,7 @@
     "react-native": "0.73.6",
     "react-native-get-random-values": "~1.8.0",
     "react-native-svg": "14.1.0",
+    "react-native-webrtc": "^118.0.7",
     "stacktrace-parser": "^0.1.10",
     "text-encoding": "^0.7.0",
     "use-sync-external-store": "^1.2.0"

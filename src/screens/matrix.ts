@@ -35,6 +35,7 @@ class MatrixService extends EventEmitter {
     public tempKey: any = null;
     public isResettingIdentity = false;
     public currentVerificationRequest: any = null;
+    public activeCall: any = null;
 
     constructor() {
         super();
@@ -210,6 +211,15 @@ class MatrixService extends EventEmitter {
                         this._handleVerificationRequest(request);
                     });
                 }
+
+                // Lắng nghe cuộc gọi đến (Inbound Call)
+                this.client.on("Call.incoming" as any, (call: any) => {
+                    if (this.activeCall) {
+                        call.hangup('busy');
+                        return;
+                    }
+                    this._handleNewCall(call, true);
+                });
             }
         });
 
@@ -223,6 +233,67 @@ class MatrixService extends EventEmitter {
         }
         await AsyncStorage.clear();
     }
+
+    // === XỬ LÝ WEBRTC VOIP === //
+    async placeCall(roomId: string, type: 'voice' | 'video' = 'voice') {
+        if (!this.client) return;
+        const call = this.client.createCall(roomId);
+        if (!call) return;
+        this._handleNewCall(call, false, type);
+    }
+
+    _handleNewCall(call: any, isIncoming: boolean, type: 'voice' | 'video' = 'voice') {
+        this.activeCall = call;
+
+        const updateUI = () => {
+            if (!this.activeCall) {
+                this.emit('call.update', null);
+                return;
+            }
+            const data = {
+                id: call.callId,
+                roomId: call.roomId,
+                type: call.type || type,
+                state: call.state,
+                isIncoming: isIncoming && call.state === 'ringing',
+                localStream: call.localUsermediaStream || call.localStream,
+                remoteStream: call.remoteUsermediaStream || call.remoteStream,
+            };
+            this.emit('call.update', data);
+        };
+
+        call.on('state', (state: string) => {
+            if (state === 'ended') this.activeCall = null;
+            updateUI();
+        });
+
+        call.on('local_stream', (stream: any) => { this.emit('call.local_stream', stream); updateUI(); });
+        call.on('remote_stream', (stream: any) => { this.emit('call.remote_stream', stream); updateUI(); });
+
+        call.on('error', (err: any) => {
+            console.error("Lỗi WebRTC/Call:", err);
+            this.hangupCall();
+        });
+
+        if (!isIncoming) {
+            if (type === 'video') call.placeVideoCall();
+            else call.placeVoiceCall();
+        }
+        updateUI();
+    }
+
+    answerCall() {
+        if (this.activeCall && this.activeCall.state === 'ringing') this.activeCall.answer();
+    }
+
+    hangupCall() {
+        if (this.activeCall) {
+            this.activeCall.hangup();
+            this.activeCall = null;
+            this.emit('call.update', null);
+        }
+    }
+    // ======================== //
 
     _handleVerificationRequest(request: any) {
         this.currentVerificationRequest = request;

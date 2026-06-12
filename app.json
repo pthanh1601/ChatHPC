@@ -14,10 +14,11 @@
       "buildNumber": "31",
       "infoPlist": {
         "UIBackgroundModes": [
-          "fetch",
-          "remote-notification"
+          "audio",
+          "fetch"
         ],
-        "NSCameraUsageDescription": "ChatHPC cần quyền truy cập camera để quét mã QR sử dụng điểm.",
+        "NSCameraUsageDescription": "Ứng dụng cần sử dụng camera để thực hiện cuộc gọi video.",
+        "NSMicrophoneUsageDescription": "Ứng dụng cần sử dụng micro để truyền tải giọng nói khi gọi điện.",
         "NSPhotoLibraryUsageDescription": "ChatHPC cần quyền truy cập thư viện ảnh để cập nhật ảnh đại diện.",
         "NSPhotoLibraryAddOnlyUsageDescription": "ChatHPC cần quyền để lưu ảnh vào thiết bị.",
         "NSFaceIDUsageDescription": "Cho phép ChatHPC sử dụng Face ID để đăng nhập nhanh chóng và bảo mật."
@@ -27,7 +28,14 @@
       "package": "com.eclo.chathpc"
     },
     "plugins": [
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "@config-plugins/react-native-webrtc",
+        {
+          "cameraPermission": "Cho phép ứng dụng sử dụng Camera để gọi Video.",
+          "microphonePermission": "Cho phép ứng dụng sử dụng Micro để gọi điện thoại."
+        }
+      ]
     ]
   }
 }

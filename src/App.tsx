@@ -4,13 +4,15 @@
  */
 import { useState, useEffect, useRef } from 'react';
 import { View, PanResponder, LayoutAnimation, Platform, UIManager, BackHandler, Animated, Dimensions } from 'react-native';
+import { Phone, Video } from 'lucide-react-native';
 import { AppScreen } from './data';
-import { loginToMatrix, startMatrixSync } from './screens/matrix';
+import { loginToMatrix, startMatrixSync, matrixService } from './screens/matrix';
 import { BottomNav } from './components/BottomNav';
 import { Login } from './screens/Login';
 import { ChatList } from './screens/ChatList';
 import { ChatSingle } from './screens/ChatSingle';
 import { ChatGroup } from './screens/ChatGroup';
+import { CallScreen } from './screens/CallScreen';
 import { Profile } from './screens/Profile';
 import { Calls } from './screens/Calls';
 import { Search } from './screens/Search';
@@ -26,6 +28,8 @@ const { width } = Dimensions.get('window');
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState<AppScreen>('login');
   const [baseScreen, setBaseScreen] = useState<AppScreen>('chat_list');
+  const [activeCall, setActiveCall] = useState<any>(null);
+  const [isCallMinimized, setIsCallMinimized] = useState(false);
 
   // Dùng ref để PanResponder và BackHandler luôn lấy được state mới nhất
   const currentScreenRef = useRef<AppScreen>(currentScreen);
@@ -106,6 +110,15 @@ export default function App() {
     return () => backHandler.remove();
   }, []);
 
+  useEffect(() => {
+    const onCallUpdate = (callData: any) => {
+      setActiveCall(callData);
+      if (!callData) setIsCallMinimized(false);
+    };
+    matrixService.on('call.update', onCallUpdate);
+    return () => matrixService.removeListener('call.update', onCallUpdate);
+  }, []);
+
   const isDetailActive = ['chat_single', 'chat_group', 'create_room'].includes(currentScreen);
   const activeBaseScreen = isDetailActive ? baseScreen : currentScreen;
 
@@ -137,6 +150,22 @@ export default function App() {
             {currentScreen === 'create_room' && <CreateRoom setScreen={handleSetScreen} />}
           </SafeScreen>
         </Animated.View>
+      )}
+
+      {/* LỚP 3: Màn hình Gọi điện WebRTC */}
+      {activeCall && !isCallMinimized && (
+        <CallScreen activeCall={activeCall} onMinimize={() => setIsCallMinimized(true)} />
+      )}
+
+      {/* Nút Bong bóng thu nhỏ khi đang gọi điện */}
+      {activeCall && isCallMinimized && (
+        <TouchableOpacity 
+          onPress={() => setIsCallMinimized(false)}
+          className="absolute top-16 right-5 w-14 h-14 bg-card rounded-full flex items-center justify-center shadow-2xl border border-white/20 z-[9999]"
+        >
+          {activeCall.type === 'video' ? <Video size={24} color="#00fbfb" /> : <Phone size={24} color="#dcb8ff" />}
+          <View className="absolute top-0 right-0 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-background" />
+        </TouchableOpacity>
       )}
     </View>
   );

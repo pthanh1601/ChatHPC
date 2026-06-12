@@ -256,10 +256,10 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
           </View>
         </View>
         <View className="flex-row items-center">
-          <TouchableOpacity className="mr-6">
+          <TouchableOpacity onPress={() => matrixService.placeCall(currentActiveRoomId || '', 'voice')} className="mr-6">
             <Phone size={24} color="#a0a0a0" />
           </TouchableOpacity>
-          <TouchableOpacity>
+          <TouchableOpacity onPress={() => matrixService.placeCall(currentActiveRoomId || '', 'video')}>
             <Video size={24} color="#a0a0a0" />
           </TouchableOpacity>
         </View>

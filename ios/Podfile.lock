@@ -35,6 +35,7 @@ PODS:
   - hermes-engine (0.73.6):
     - hermes-engine/Pre-built (= 0.73.6)
   - hermes-engine/Pre-built (0.73.6)
+  - JitsiWebRTC (118.0.0)
   - libevent (2.1.12)
   - RCT-Folly (2022.05.16.00):
     - boost
@@ -909,6 +910,9 @@ PODS:
     - React-debug
   - react-native-get-random-values (1.8.0):
     - React-Core
+  - react-native-webrtc (118.0.7):
+    - JitsiWebRTC (~> 118.0.0)
+    - React-Core
   - React-nativeconfig (0.73.6)
   - React-NativeModulesApple (0.73.6):
     - glog
@@ -1123,6 +1127,7 @@ DEPENDENCIES:
   - React-logger (from `../node_modules/react-native/ReactCommon/logger`)
   - React-Mapbuffer (from `../node_modules/react-native/ReactCommon`)
   - react-native-get-random-values (from `../node_modules/react-native-get-random-values`)
+  - react-native-webrtc (from `../node_modules/react-native-webrtc`)
   - React-nativeconfig (from `../node_modules/react-native/ReactCommon`)
   - React-NativeModulesApple (from `../node_modules/react-native/ReactCommon/react/nativemodule/core/platform/ios`)
   - React-perflogger (from `../node_modules/react-native/ReactCommon/reactperflogger`)
@@ -1150,6 +1155,7 @@ DEPENDENCIES:
 SPEC REPOS:
   trunk:
     - fmt
+    - JitsiWebRTC
     - libevent
     - SocketRocket
 
@@ -1227,6 +1233,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native/ReactCommon"
   react-native-get-random-values:
     :path: "../node_modules/react-native-get-random-values"
+  react-native-webrtc:
+    :path: "../node_modules/react-native-webrtc"
   React-nativeconfig:
     :path: "../node_modules/react-native/ReactCommon"
   React-NativeModulesApple:
@@ -1290,6 +1298,7 @@ SPEC CHECKSUMS:
   fmt: ff9d55029c625d3757ed641535fd4a75fedc7ce9
   glog: c5d68082e772fa1c511173d6b30a9de2c05a69a2
   hermes-engine: 9cecf9953a681df7556b8cc9c74905de8f3293c0
+  JitsiWebRTC: 3a41671ef65a51d7204323814b055a2690b921c7
   libevent: 4049cae6c81cdb3654a443be001fb9bdceff7913
   RCT-Folly: cd21f1661364f975ae76b3308167ad66b09f53f5
   RCTRequired: ca1d7414aba0b27efcfa2ccd37637edb1ab77d96
@@ -1313,6 +1322,7 @@ SPEC CHECKSUMS:
   React-logger: 55764cd993880c6f887505854581c9faf68feff2
   React-Mapbuffer: 15dfcfeb4428d8799cce75e7fe85b18b706029e0
   react-native-get-random-values: 0fd2b6a3129988d701d10e30f0622d5f039531bc
+  react-native-webrtc: eb8582f60b91e8883c290425bf1676c4bcedd63d
   React-nativeconfig: b4d4e9901d4cabb57be63053fd2aa6086eb3c85f
   React-NativeModulesApple: 541d64309a3037060cc416db5c8a63ee5884048e
   React-perflogger: 5f49905de275bac07ac7ea7f575a70611fa988f2

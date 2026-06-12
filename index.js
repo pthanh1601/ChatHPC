@@ -43,6 +43,36 @@ if (typeof global.FinalizationRegistry === 'undefined') {
   globalThis.FinalizationRegistry = global.FinalizationRegistry;
 }
 
+// 🌟 POLYFILL WEBRTC CHO MATRIX JS SDK HOẠT ĐỘNG TRÊN REACT NATIVE
+import { registerGlobals } from 'react-native-webrtc';
+
+// Đăng ký toàn bộ biến môi trường WebRTC chuẩn (window.RTCPeerConnection, navigator.mediaDevices...)
+registerGlobals();
+
+if (!global.window) global.window = global;
+if (!global.document) {
+  global.document = {
+    createElement: (tag) => ({ play: async () => {}, pause: () => {}, srcObject: null, setAttribute: () => {}, removeAttribute: () => {}, addEventListener: () => {}, removeEventListener: () => {} })
+  };
+}
+
+// 🌟 POLYFILL AUDIO CONTEXT: Đánh lừa Matrix SDK để không bị crash khi gọi Web Audio API
+class DummyAudioContext {
+  constructor() { this.state = 'running'; }
+  createMediaStreamSource() { return { connect: () => {} }; }
+  createAnalyser() { return { connect: () => {}, disconnect: () => {}, fftSize: 2048, frequencyBinCount: 1024, getByteTimeDomainData: () => {} }; }
+  createGain() { return { gain: { value: 1 }, connect: () => {}, disconnect: () => {} }; }
+  createScriptProcessor() { return { connect: () => {}, disconnect: () => {}, onaudioprocess: null }; }
+  createBiquadFilter() { return { connect: () => {}, disconnect: () => {} }; }
+  createMediaStreamDestination() { return { stream: {}, connect: () => {}, disconnect: () => {} }; }
+  close() { return Promise.resolve(); }
+  resume() { return Promise.resolve(); }
+  suspend() { return Promise.resolve(); }
+}
+global.AudioContext = DummyAudioContext;
+global.window.AudioContext = DummyAudioContext;
+global.window.webkitAudioContext = DummyAudioContext;
+
 // 2. Nạp các polyfill hệ thống bằng require để tránh bị Babel nhấc lên đầu
 require('react-native-get-random-values');
 
