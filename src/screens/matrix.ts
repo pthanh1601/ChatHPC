@@ -350,14 +350,23 @@ class MatrixService extends EventEmitter {
         });
     }
 
-    async uploadFile(roomId: string, file: any) {
-        // TODO: Cần tích hợp native file upload logic nếu dùng File objects ở RN
+    async uploadFile(roomId: string, file: { uri: string, type: string, name: string, size?: number }) {
         if (!this.client) return;
-        const response = await this.client.uploadContent(file);
+        
+        // Chuyển đổi tệp từ URI của thiết bị sang định dạng Blob để SDK có thể tải lên
+        const response = await fetch(file.uri);
+        const blob = await response.blob();
+        (blob as any).name = file.name;
+
+        const uploadResponse = await this.client.uploadContent(blob, {
+            name: file.name,
+            type: file.type,
+            rawResponse: false
+        });
         const content = {
             body: file.name || "Attachment",
-            msgtype: file.type?.startsWith('image/') ? 'm.image' : 'm.file',
-            url: response.content_uri,
+            msgtype: file.type?.startsWith('image/') ? 'm.image' : (file.type?.startsWith('audio/') ? 'm.audio' : 'm.file'),
+            url: uploadResponse.content_uri || uploadResponse,
             info: { mimetype: file.type, size: file.size }
         };
         return await this.client.sendEvent(roomId, "m.room.message", content);

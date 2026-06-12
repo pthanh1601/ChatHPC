@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, SafeAreaView, Dimensions, Image, Modal } from 'react-native';
 import { RTCView } from 'react-native-webrtc';
 import { Mic, MicOff, Video, VideoOff, PhoneOff, Phone, Minimize2 } from 'lucide-react-native';
 import { BlurView } from 'expo-blur';
+import { Audio } from 'expo-av';
 import { matrixService, getMatrixClient } from './matrix';
 import { CONTACTS } from '../data';
 
@@ -15,6 +16,7 @@ export function CallScreen({ activeCall, onMinimize }: { activeCall: any, onMini
     const [isVideoMuted, setIsVideoMuted] = useState(false);
     const [duration, setDuration] = useState(0);
     const [roomInfo, setRoomInfo] = useState({ name: 'Đang kết nối...', avatar: CONTACTS.aria.avatar });
+    const soundRef = useRef<Audio.Sound | null>(null);
 
     useEffect(() => {
         if (!activeCall) return;
@@ -46,6 +48,46 @@ export function CallScreen({ activeCall, onMinimize }: { activeCall: any, onMini
             });
         }
     }, [activeCall?.roomId]);
+
+    useEffect(() => {
+        const handleAudio = async () => {
+            try {
+                if (soundRef.current) {
+                    await soundRef.current.stopAsync();
+                    await soundRef.current.unloadAsync();
+                    soundRef.current = null;
+                }
+
+                await Audio.setAudioModeAsync({
+                    allowsRecordingIOS: true,
+                    playsInSilentModeIOS: true,
+                    staysActiveInBackground: true,
+                    playThroughEarpieceAndroid: false,
+                });
+
+                if (activeCall?.isIncoming && activeCall?.state === 'ringing') {
+                    // Đổ chuông báo người khác gọi đến
+                    const { sound } = await Audio.Sound.createAsync(
+                        { uri: 'https://raw.githubusercontent.com/matrix-org/matrix-react-sdk/master/res/media/ringtone.mp3' },
+                        { shouldPlay: true, isLooping: true }
+                    );
+                    soundRef.current = sound;
+                } else if (!activeCall?.isIncoming && activeCall?.state === 'invite_sent') {
+                    // Đổ tiếng tút tút chờ người bên kia nhấc máy
+                    const { sound } = await Audio.Sound.createAsync(
+                        { uri: 'https://raw.githubusercontent.com/matrix-org/matrix-react-sdk/master/res/media/ringback.mp3' },
+                        { shouldPlay: true, isLooping: true }
+                    );
+                    soundRef.current = sound;
+                }
+            } catch (error) {
+                console.log("Lỗi phát âm thanh:", error);
+            }
+        };
+
+        handleAudio();
+        return () => { if (soundRef.current) { soundRef.current.stopAsync().catch(()=>{}); soundRef.current.unloadAsync().catch(()=>{}); } };
+    }, [activeCall?.state, activeCall?.isIncoming]);
 
     useEffect(() => {
         let interval: NodeJS.Timeout;

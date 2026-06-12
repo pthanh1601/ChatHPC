@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 import { useState, useEffect, useRef } from 'react';
-import { View, PanResponder, LayoutAnimation, Platform, UIManager, BackHandler, Animated, Dimensions } from 'react-native';
+import { View, PanResponder, LayoutAnimation, Platform, UIManager, BackHandler, Animated, Dimensions, TouchableOpacity } from 'react-native';
 import { Phone, Video } from 'lucide-react-native';
 import { AppScreen } from './data';
 import { loginToMatrix, startMatrixSync, matrixService } from './screens/matrix';
@@ -35,6 +35,7 @@ export default function App() {
   const currentScreenRef = useRef<AppScreen>(currentScreen);
   const baseScreenRef = useRef<AppScreen>(baseScreen);
   const slideAnim = useRef(new Animated.Value(width)).current; // Khởi tạo vị trí trượt mặc định ở ngoài rìa phải
+  const bubblePan = useRef(new Animated.ValueXY()).current; // Lưu toạ độ kéo thả của bong bóng thu nhỏ
 
   const handleSetScreen = (screen: AppScreen) => {
     const isDetail = ['chat_single', 'chat_group', 'create_room'].includes(screen);
@@ -96,6 +97,26 @@ export default function App() {
     })
   ).current;
 
+  // Bộ xử lý sự kiện kéo thả cho bong bóng gọi điện
+  const bubblePanResponder = useRef(
+    PanResponder.create({
+      // Chỉ kích hoạt chế độ Kéo nếu ngón tay di chuyển lớn hơn 5 pixel (tránh nhầm với thao tác Nhấp / Tap)
+      onMoveShouldSetPanResponder: (_, gestureState) => {
+        return Math.abs(gestureState.dx) > 5 || Math.abs(gestureState.dy) > 5;
+      },
+      onPanResponderGrant: () => {
+        bubblePan.extractOffset(); // Khóa vị trí hiện tại lại làm gốc kéo mới
+      },
+      onPanResponderMove: Animated.event(
+        [null, { dx: bubblePan.x, dy: bubblePan.y }],
+        { useNativeDriver: false } // ValueXY bắt buộc chạy trên luồng JS
+      ),
+      onPanResponderRelease: () => {
+        bubblePan.flattenOffset(); // Gộp giá trị kéo mới vào vị trí gốc
+      }
+    })
+  ).current;
+
   // Tích hợp thêm nút Back vật lý trên hệ điều hành Android
   useEffect(() => {
     const backAction = () => {
@@ -116,7 +137,9 @@ export default function App() {
       if (!callData) setIsCallMinimized(false);
     };
     matrixService.on('call.update', onCallUpdate);
-    return () => matrixService.removeListener('call.update', onCallUpdate);
+    return () => {
+      matrixService.removeListener('call.update', onCallUpdate);
+    };
   }, []);
 
   const isDetailActive = ['chat_single', 'chat_group', 'create_room'].includes(currentScreen);
@@ -159,13 +182,24 @@ export default function App() {
 
       {/* Nút Bong bóng thu nhỏ khi đang gọi điện */}
       {activeCall && isCallMinimized && (
-        <TouchableOpacity 
-          onPress={() => setIsCallMinimized(false)}
-          className="absolute top-16 right-5 w-14 h-14 bg-card rounded-full flex items-center justify-center shadow-2xl border border-white/20 z-[9999]"
+        <Animated.View 
+          style={{
+            transform: bubblePan.getTranslateTransform(),
+            position: 'absolute',
+            top: 64,    // top-16
+            right: 20,  // right-5
+            zIndex: 9999,
+          }}
+          {...bubblePanResponder.panHandlers}
         >
-          {activeCall.type === 'video' ? <Video size={24} color="#00fbfb" /> : <Phone size={24} color="#dcb8ff" />}
-          <View className="absolute top-0 right-0 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-background" />
-        </TouchableOpacity>
+          <TouchableOpacity 
+            onPress={() => setIsCallMinimized(false)}
+            className="w-14 h-14 bg-card rounded-full flex items-center justify-center shadow-2xl border border-white/20"
+          >
+            {activeCall.type === 'video' ? <Video size={24} color="#00fbfb" /> : <Phone size={24} color="#dcb8ff" />}
+            <View className="absolute top-0 right-0 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-background" />
+          </TouchableOpacity>
+        </Animated.View>
       )}
     </View>
   );
