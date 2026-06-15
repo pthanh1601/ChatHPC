@@ -34,6 +34,15 @@ export function Calls({ setScreen }: { setScreen: (s: AppScreen) => void }) {
           if (isOutgoing) type = 'outgoing';
           else if (answered) type = 'incoming';
 
+          const answerEvent = callEvents.find(e => e.getType() === 'm.call.answer' && e.getContent().call_id === callId);
+          const hangupEvent = callEvents.find(e => e.getType() === 'm.call.hangup' && e.getContent().call_id === callId);
+          
+          let durationText = '';
+          if (answerEvent && hangupEvent) {
+            const durationSec = Math.max(0, Math.floor((hangupEvent.getTs() - answerEvent.getTs()) / 1000));
+            durationText = ` (${Math.floor(durationSec / 60).toString().padStart(2, '0')}:${(durationSec % 60).toString().padStart(2, '0')})`;
+          }
+
           let avatar = room.getAvatarUrl(client.getHomeserverUrl(), 56, 56, 'crop', false, false);
           if (!avatar) avatar = CONTACTS.aria.avatar; // Fallback ảnh
 
@@ -43,6 +52,7 @@ export function Calls({ setScreen }: { setScreen: (s: AppScreen) => void }) {
             name: room.name || 'Người dùng',
             avatar,
             time,
+            durationText,
             type,
             timestamp: invite.getTs()
           });
@@ -89,7 +99,7 @@ export function Calls({ setScreen }: { setScreen: (s: AppScreen) => void }) {
                   {call.type === 'missed' && <PhoneMissed size={14} color="#ef4444" />}
                   {call.type === 'outgoing' && <PhoneOutgoing size={14} color="#a0a0a0" />}
                   {call.type === 'incoming' && <PhoneIncoming size={14} color="#a0a0a0" />}
-                  <Text className="text-sm text-gray-400" style={{ includeFontPadding: false }}>{call.time}</Text>
+                  <Text className="text-sm text-gray-400" style={{ includeFontPadding: false }}>{call.time}{call.durationText}</Text>
                 </View>
               </View>
               <TouchableOpacity className="w-10 h-10 bg-surface rounded-full flex items-center justify-center border border-white/5">

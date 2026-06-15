@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 import { useState, useEffect, useRef } from 'react';
-import { View, PanResponder, LayoutAnimation, Platform, UIManager, BackHandler, Animated, Dimensions, TouchableOpacity } from 'react-native';
-import { Phone, Video } from 'lucide-react-native';
+import { View, PanResponder, LayoutAnimation, Platform, UIManager, BackHandler, Animated, Dimensions, TouchableOpacity, Text } from 'react-native';
+import { Phone, Video, Mic } from 'lucide-react-native';
 import { AppScreen } from './data';
 import { loginToMatrix, startMatrixSync, matrixService } from './screens/matrix';
 import { BottomNav } from './components/BottomNav';
@@ -30,6 +30,8 @@ export default function App() {
   const [baseScreen, setBaseScreen] = useState<AppScreen>('chat_list');
   const [activeCall, setActiveCall] = useState<any>(null);
   const [isCallMinimized, setIsCallMinimized] = useState(false);
+  const [callDuration, setCallDuration] = useState(0);
+  const callStartTimeRef = useRef<number | null>(null);
 
   // Dùng ref để PanResponder và BackHandler luôn lấy được state mới nhất
   const currentScreenRef = useRef<AppScreen>(currentScreen);
@@ -142,6 +144,28 @@ export default function App() {
     };
   }, []);
 
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (activeCall?.state === 'connected' || activeCall?.state === 'connecting') {
+        const start = activeCall.startTime || callStartTimeRef.current || Date.now();
+        if (!callStartTimeRef.current) callStartTimeRef.current = start;
+        
+        interval = setInterval(() => {
+            setCallDuration(Math.max(0, Math.floor((Date.now() - start) / 1000)));
+        }, 1000);
+    } else {
+        callStartTimeRef.current = null;
+        setCallDuration(0);
+    }
+    return () => clearInterval(interval);
+  }, [activeCall?.state, activeCall?.startTime]);
+
+  const formatBubbleDuration = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
   const isDetailActive = ['chat_single', 'chat_group', 'create_room'].includes(currentScreen);
   const activeBaseScreen = isDetailActive ? baseScreen : currentScreen;
 
@@ -194,9 +218,14 @@ export default function App() {
         >
           <TouchableOpacity 
             onPress={() => setIsCallMinimized(false)}
-            className="w-14 h-14 bg-card rounded-full flex items-center justify-center shadow-2xl border border-white/20"
+            className="bg-card rounded-full flex-row items-center justify-center shadow-2xl border border-white/20 px-3"
+            style={{ height: 56, minWidth: 56 }}
           >
-            {activeCall.type === 'video' ? <Video size={24} color="#00fbfb" /> : <Phone size={24} color="#dcb8ff" />}
+            {(activeCall.state === 'connected' || activeCall.state === 'connecting') && callDuration > 0 ? (
+              <Text className="text-white font-bold mx-1">{formatBubbleDuration(callDuration)}</Text>
+            ) : (
+              activeCall.type === 'video' ? <Video size={24} color="#00fbfb" /> : <Phone size={24} color="#dcb8ff" />
+            )}
             <View className="absolute top-0 right-0 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-background" />
           </TouchableOpacity>
         </Animated.View>

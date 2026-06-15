@@ -17,6 +17,7 @@ export function CallScreen({ activeCall, onMinimize }: { activeCall: any, onMini
     const [duration, setDuration] = useState(0);
     const [roomInfo, setRoomInfo] = useState({ name: 'Đang kết nối...', avatar: CONTACTS.aria.avatar });
     const soundRef = useRef<Audio.Sound | null>(null);
+    const startTimeRef = useRef<number | null>(null);
 
     useEffect(() => {
         if (!activeCall) return;
@@ -91,15 +92,20 @@ export function CallScreen({ activeCall, onMinimize }: { activeCall: any, onMini
 
     useEffect(() => {
         let interval: NodeJS.Timeout;
-        if (activeCall?.state === 'connected') {
+        if (activeCall?.state === 'connected' || activeCall?.state === 'connecting') {
+            const start = activeCall.startTime || startTimeRef.current || Date.now();
+            if (!startTimeRef.current) startTimeRef.current = start;
+            
             interval = setInterval(() => {
-                setDuration(prev => prev + 1);
+                const now = Date.now();
+                setDuration(Math.max(0, Math.floor((now - start) / 1000)));
             }, 1000);
         } else {
+            startTimeRef.current = null;
             setDuration(0);
         }
         return () => clearInterval(interval);
-    }, [activeCall?.state]);
+    }, [activeCall?.state, activeCall?.startTime]);
 
     if (!activeCall) return null;
 
@@ -124,8 +130,12 @@ export function CallScreen({ activeCall, onMinimize }: { activeCall: any, onMini
     };
 
     const formatDuration = (seconds: number) => {
-        const mins = Math.floor(seconds / 60);
+        const hrs = Math.floor(seconds / 3600);
+        const mins = Math.floor((seconds % 3600) / 60);
         const secs = seconds % 60;
+        if (hrs > 0) {
+            return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+        }
         return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
     };
 
@@ -136,7 +146,7 @@ export function CallScreen({ activeCall, onMinimize }: { activeCall: any, onMini
             case 'create_offer': return 'Đang tạo kết nối...';
             case 'invite_sent': return 'Đang gọi...';
             case 'ringing': return 'Đang đổ chuông...';
-            case 'connecting': return 'Đang kết nối...';
+            case 'connecting': return duration > 0 ? formatDuration(duration) : 'Đang kết nối...';
             case 'connected': return formatDuration(duration);
             default: return activeCall.isIncoming ? 'Đang gọi đến...' : `Trạng thái: ${activeCall.state}`;
         }

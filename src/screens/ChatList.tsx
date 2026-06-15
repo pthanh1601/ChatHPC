@@ -26,10 +26,19 @@ export function ChatList({ setScreen }: { setScreen: (s: AppScreen) => void }) {
       let time = '';
 
       if (lastEvent) {
-        if (lastEvent.getType() === 'm.room.message') {
-          lastMessage = lastEvent.getContent().body || 'Tin nhắn mới';
+        const type = lastEvent.getType();
+        if (type === 'm.room.message') {
+          lastMessage = lastEvent.getContent().body || 'Tin nhắn';
+        } else if (type === 'm.call.invite') {
+          const isVideo = lastEvent.getContent()?.offer?.sdp?.includes('m=video');
+          lastMessage = isVideo ? '📹 Cuộc gọi Video' : '📞 Cuộc gọi Thoại';
+        } else if (type === 'm.call.hangup') {
+          lastMessage = '📞 Cuộc gọi kết thúc';
+        } else if (lastEvent.isEncrypted && lastEvent.isEncrypted()) {
+          const clear = lastEvent.getClearContent();
+          lastMessage = clear?.body || '🔒 Tin nhắn mã hóa';
         } else {
-          lastMessage = 'Sự kiện hệ thống';
+          lastMessage = 'Có sự kiện mới';
         }
         const date = new Date(lastEvent.getTs());
         const hours = date.getHours().toString().padStart(2, '0');

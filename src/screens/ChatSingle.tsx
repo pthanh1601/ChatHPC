@@ -1,12 +1,14 @@
 import { useState, useEffect, useRef } from 'react';
-import { View, Text, Image, TouchableOpacity, TextInput, ScrollView, KeyboardAvoidingView, Platform, ActivityIndicator, LayoutAnimation, UIManager, Keyboard } from 'react-native';
-import { ArrowLeft, Phone, Video, CheckCheck, Plus, Mic, Send, ChevronDown, Image as ImageIcon, File as FileIcon, X, Play, Trash2 } from 'lucide-react-native';
+import { View, Text, Image, TouchableOpacity, TextInput, ScrollView, KeyboardAvoidingView, Platform, ActivityIndicator, LayoutAnimation, UIManager, Keyboard, Alert, Linking } from 'react-native';
+import { ArrowLeft, Phone, Video, CheckCheck, Plus, Mic, Send, ChevronDown, Image as ImageIcon, File as FileIcon, X, Play, Trash2, PhoneOff } from 'lucide-react-native';
 import { Audio } from 'expo-av';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { AppScreen, CONTACTS, MEDIA } from '../data';
-import { getMatrixClient, currentActiveRoomId, matrixService } from './matrix';
+import { getMatrixClient, currentActiveRoomId, matrixService, decryptMatrixFile } from './matrix';
 import { Header } from '../components/Header';
+import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -16,6 +18,56 @@ const formatDurationStr = (seconds: number) => {
   const mins = Math.floor(seconds / 60);
   const secs = seconds % 60;
   return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+};
+
+const MatrixImage = ({ url, client }: { url: string, client: any }) => {
+  const [localUri, setLocalUri] = useState<string | null>(null);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    if (!url) return;
+    const loadImg = async () => {
+      try {
+        const safeId = url.replace(/[^a-zA-Z0-9]/g, '_').substring(Math.max(0, url.length - 30));
+        const fileUri = FileSystem.cacheDirectory + 'img_v3_' + safeId + '.jpg';
+        const info = await FileSystem.getInfoAsync(fileUri);
+        
+        if (info.exists) {
+          setLocalUri(fileUri);
+        } else {
+          const downloadResult = await FileSystem.downloadAsync(url, fileUri, {
+            headers: client?.getAccessToken() ? { Authorization: `Bearer ${client.getAccessToken()}` } : {}
+          });
+          if (downloadResult.status === 200) {
+            setLocalUri(downloadResult.uri);
+          } else {
+            setError(true);
+          }
+        }
+      } catch (e) {
+        setError(true);
+      }
+    };
+    loadImg();
+  }, [url]);
+
+  if (error) {
+    return (
+      <View className="w-[220px] h-[150px] bg-red-500/10 flex items-center justify-center rounded-lg border border-red-500/20">
+        <Text className="text-red-400 text-xs">Không thể tải ảnh</Text>
+      </View>
+    );
+  }
+
+  if (!localUri) {
+    return (
+      <View className="w-[220px] h-[220px] bg-white/5 flex items-center justify-center rounded-lg border border-white/10">
+        <ActivityIndicator color="#dcb8ff"/>
+      </View>
+    );
+  }
+
+  return <Image source={{ uri: localUri }} style={{ width: 220, height: 220, resizeMode: 'cover' }} className="rounded-lg" />;
 };
 
 export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void }) {
@@ -31,7 +83,7 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
     return room.timeline
       .filter(e => {
         const type = e.getType();
-        return type === 'm.room.message' || type === 'm.room.encrypted';
+        return type === 'm.room.message' || type === 'm.room.encrypted' || type === 'm.call.invite';
       })
       .map((e: any) => {
         const date = new Date(e.getTs());
@@ -40,21 +92,65 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
         let text = "Tin nhắn không có nội dung";
         let msgType = "m.text";
         let mediaUrl = null;
+        let info = null;
+        let fileName = 'file';
 
-        if (e.isEncrypted()) {
+        const type = e.getType();
+        
+        if (type === 'm.call.invite') {
+          msgType = 'm.call';
+          const isVideo = e.getContent()?.offer?.sdp?.includes('m=video');
+          const callId = e.getContent()?.call_id;
+          
+          const relatedEvents = room.timeline.filter((evt: any) => evt.getContent()?.call_id === callId);
+          const answerEvent = relatedEvents.find((evt: any) => evt.getType() === 'm.call.answer');
+          const hangupEvent = relatedEvents.find((evt: any) => evt.getType() === 'm.call.hangup');
+          const rejectEvent = relatedEvents.find((evt: any) => evt.getType() === 'm.call.reject');
+          
+          const isOutgoing = e.getSender() === client.getUserId();
+          
+          if (rejectEvent || (hangupEvent && (!answerEvent || hangupEvent.getContent()?.reason === 'user_hangup'))) {
+            text = isOutgoing ? '📞 Cuộc gọi không trả lời' : '📞 Cuộc gọi nhỡ';
+            msgType = 'm.call.missed';
+          } else if (answerEvent && hangupEvent) {
+            const durationMs = hangupEvent.getTs() - answerEvent.getTs();
+            const durationSec = Math.max(0, Math.floor(durationMs / 1000));
+            text = `${isVideo ? '�' : '�📞'} Cuộc gọi kết thúc (${formatDurationStr(durationSec)})`;
+            msgType = 'm.call.ended';
+          } else if (answerEvent) {
+            text = `${isVideo ? '📹' : '📞'} Cuộc gọi đang diễn ra...`;
+            msgType = 'm.call.ongoing';
+          } else {
+            text = isOutgoing ? '📞 Đang gọi...' : '📞 Cuộc gọi đến...';
+            msgType = 'm.call.calling';
+          }
+        } else if (e.isEncrypted()) {
           const clear = e.getClearContent();
           msgType = clear ? clear.msgtype : "m.text";
           text = clear ? (clear.body || text) : "🔒 Tin nhắn đang được giải mã...";
-          if (clear && clear.url) mediaUrl = clear.url;
-          if (clear && clear.file) mediaUrl = clear.file.url;
+          
+          if (clear) {
+            if (clear.url) mediaUrl = clear.url;
+            if (clear.file) mediaUrl = clear.file.url;
+            if (clear.body) fileName = clear.body;
+            
+            info = clear.info || {};
+            if (clear.file && !info.encryptedFileInfo) {
+              info.encryptedFileInfo = clear.file;
+            }
+          }
         } else {
           const content = e.getContent();
           msgType = content.msgtype || "m.text";
           text = content.body || text;
           if (content.url) mediaUrl = content.url;
+          if (content.body) fileName = content.body;
+          info = content.info;
         }
 
-        if (mediaUrl && mediaUrl.startsWith('mxc://')) mediaUrl = client.mxcUrlToHttp(mediaUrl);
+        if (mediaUrl && mediaUrl.startsWith('mxc://')) {
+          mediaUrl = client.mxcUrlToHttp(mediaUrl);
+        }
 
         return {
           id: e.getId(),
@@ -64,7 +160,10 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
           time: time,
           senderName: room.getMember(e.getSender())?.name || e.getSender(),
           msgType,
-          mediaUrl
+          mediaUrl,
+          fileName,
+          info,
+          matrixEvent: e
         };
       });
   };
@@ -121,10 +220,12 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
         const file = {
           uri: asset.uri,
           name: asset.fileName || asset.uri.split('/').pop() || 'image.jpg',
-          type: asset.mimeType || (asset.type === 'video' ? 'video/mp4' : 'image/jpeg'),
+          type: asset.mimeType?.startsWith('image/') ? asset.mimeType : (asset.type === 'video' ? 'video/mp4' : 'image/jpeg'),
           size: asset.fileSize
         };
-        matrixService.uploadFile(currentActiveRoomId!, file);
+        matrixService.uploadFile(currentActiveRoomId!, file).catch(err => {
+          Alert.alert('Lỗi', 'Không thể gửi hình ảnh: ' + err.message);
+        });
         shouldScrollRef.current = true;
       }
     } catch (e) { console.error(e); }
@@ -142,7 +243,9 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
           type: asset.mimeType || 'application/octet-stream',
           size: asset.size
         };
-        matrixService.uploadFile(currentActiveRoomId!, file);
+        matrixService.uploadFile(currentActiveRoomId!, file).catch(err => {
+          Alert.alert('Lỗi', 'Không thể gửi tài liệu: ' + err.message);
+        });
         shouldScrollRef.current = true;
       }
     } catch (e) { console.error(e); }
@@ -160,38 +263,178 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
   };
 
   const stopRecording = async (send: boolean) => {
-    setIsRecording(false);
-    if (!recording) return;
+    if (!recording) {
+      setIsRecording(false);
+      return;
+    }
     try {
-      await recording.stopAndUnloadAsync();
+      const status = await recording.stopAndUnloadAsync();
       const uri = recording.getURI();
+      
+      const finalDurationMs = status.durationMillis || recordDuration * 1000 || 1000;
+
       setRecording(null);
+      setIsRecording(false);
+      setRecordDuration(0);
+
       if (send && uri && currentActiveRoomId) {
-        const file = { uri, name: 'voice_message.m4a', type: 'audio/m4a' };
-        matrixService.uploadFile(currentActiveRoomId, file);
+        const file = { 
+          uri, 
+          name: 'voice_message.m4a', 
+          type: 'audio/m4a', 
+          size: status.fileSize || 0,
+          info: {
+            duration: finalDurationMs,
+            mimetype: 'audio/m4a'
+          },
+          duration: finalDurationMs 
+        };
+        matrixService.uploadFile(currentActiveRoomId, file).then((uploadedEvent: any) => {
+          if (uploadedEvent && uploadedEvent.event_id) {
+            const safeId = uploadedEvent.event_id.replace(/[^a-zA-Z0-9]/g, '_');
+            const targetCacheUri = FileSystem.cacheDirectory + 'audio_v3_' + safeId + '.m4a';
+            FileSystem.copyAsync({ from: uri, to: targetCacheUri }).catch(() => {});
+          }
+        })
+        .catch(err => {
+          Alert.alert('Lỗi', 'Không thể gửi ghi âm: ' + err.message);
+        });
         shouldScrollRef.current = true;
       }
-    } catch (err) { console.error('Failed to stop recording', err); }
+    } catch (err) { 
+      console.error('Failed to stop recording', err); 
+      setRecording(null);
+      setIsRecording(false);
+      setRecordDuration(0);
+    }
   };
 
-  const playAudio = async (url: string, id: string) => {
+  const playAudio = async (url: string, id: string, msgItem?: any) => {
     if (playingAudioId === id) {
       await audioPlayerRef.current?.stopAsync();
       setPlayingAudioId(null);
       return;
     }
     if (audioPlayerRef.current) {
-      await audioPlayerRef.current.stopAsync();
-      await audioPlayerRef.current.unloadAsync();
+      try {
+        await audioPlayerRef.current.stopAsync();
+        await audioPlayerRef.current.unloadAsync();
+      } catch (e) {}
     }
     try {
-      const { sound } = await Audio.Sound.createAsync({ uri: url }, { shouldPlay: true });
+      const client = getMatrixClient();
+      if (!client) return;
+
+      let playUrl = "";
+      const safeId = (id || 'unknown').replace(/[^a-zA-Z0-9]/g, '_');
+      const cacheUri = FileSystem.cacheDirectory + 'audio_v3_' + safeId + '.m4a';
+      const checkCache = await FileSystem.getInfoAsync(cacheUri);
+      
+      if (checkCache.exists) {
+        playUrl = cacheUri;
+      } else if (msgItem?.matrixEvent?.isEncrypted() && msgItem?.info?.encryptedFileInfo) {
+        setIsLoadingHistory(true); 
+        
+        try {
+          const encryptedFileInfo = msgItem.info.encryptedFileInfo;
+          
+          // Gọi helper bẻ khóa attachment từ ArrayBuffer
+          const decryptedBuffer = await decryptMatrixFile(encryptedFileInfo);
+          
+          // Chuyển đổi ArrayBuffer thu được sang chuỗi Base64 để ghi vào hệ thống Expo FileSystem
+          // Tối ưu: Dùng `Buffer` (đã được polyfill ở index.js) thay vì btoa
+          const base64Data = Buffer.from(decryptedBuffer).toString('base64');
+
+          await FileSystem.writeAsStringAsync(cacheUri, base64Data, {
+            encoding: FileSystem.EncodingType.Base64,
+          });
+
+          playUrl = cacheUri;
+        } catch (decryptError) {
+          console.error("Lỗi giải mã E2EE, thử nghiệm luồng fallback tải trực tiếp...", decryptError);
+          let downloadUrl = url.startsWith('mxc://') ? client.mxcUrlToHttp(url) : url;
+          if (!downloadUrl) throw new Error("Không thể phân giải mã URL từ server");
+
+          const downloadResult = await FileSystem.downloadAsync(downloadUrl, cacheUri, {
+            headers: client.getAccessToken() ? { Authorization: `Bearer ${client.getAccessToken()}` } : {}
+          });
+          if (downloadResult.status !== 200) throw new Error(`Mã lỗi HTTP: ${downloadResult.status}`);
+          playUrl = downloadResult.uri;
+        } finally {
+          setIsLoadingHistory(false);
+        }
+      } else {
+        let downloadUrl = url.startsWith('mxc://') ? client.mxcUrlToHttp(url) : url;
+        if (!downloadUrl) throw new Error("Không thể phân giải mã URL từ server");
+
+        const downloadResult = await FileSystem.downloadAsync(downloadUrl, cacheUri, {
+          headers: client.getAccessToken() ? { Authorization: `Bearer ${client.getAccessToken()}` } : {}
+        });
+        if (downloadResult.status !== 200) {
+          throw new Error(`Mã lỗi HTTP từ máy chủ: ${downloadResult.status}`);
+        }
+        playUrl = downloadResult.uri;
+      }
+
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+        playsInSilentModeIOS: true,
+        staysActiveInBackground: false,
+        shouldRouteThroughEarpieceAndroid: false,
+      });
+
+      const { sound } = await Audio.Sound.createAsync(
+        { uri: playUrl }, 
+        { shouldPlay: true }
+      );
       audioPlayerRef.current = sound;
       setPlayingAudioId(id);
       sound.setOnPlaybackStatusUpdate((status: any) => {
-        if (status.isLoaded && status.didJustFinish) setPlayingAudioId(null);
+        if (status.isLoaded && status.didJustFinish) {
+          setPlayingAudioId(null);
+        }
       });
-    } catch (e) { console.error(e); }
+    } catch (e: any) { 
+      console.error("Lỗi phát audio chi tiết:", e); 
+      Alert.alert("Lỗi", "Không thể phát tin nhắn thoại này. Tệp tin đang được đồng bộ hoặc chưa thể giải mã mã hóa đầu cuối.");
+      setPlayingAudioId(null);
+    }
+  };
+
+  const handleOpenFile = async (url: string, fileName: string) => {
+    try {
+      const client = getMatrixClient();
+      if (!url || !client) return;
+      
+      const extension = fileName.includes('.') ? fileName.split('.').pop() : '';
+      const cleanBaseName = fileName.replace(/\.[^/.]+$/, "").replace(/[^a-zA-Z0-9\-_]/g, '_');
+      const safeName = extension ? `${cleanBaseName}.${extension}` : cleanBaseName;
+      
+      const localUri = FileSystem.documentDirectory + safeName;
+      
+      setIsLoadingHistory(true); 
+
+      const { uri, status } = await FileSystem.downloadAsync(url, localUri, {
+        headers: client.getAccessToken() ? { Authorization: `Bearer ${client.getAccessToken()}` } : {}
+      });
+
+      setIsLoadingHistory(false);
+
+      if (status !== 200) {
+        Alert.alert('Lỗi', 'Tải file thất bại từ máy chủ (Mã lỗi: ' + status + ')');
+        return;
+      }
+
+      const isSharingAvailable = await Sharing.isAvailableAsync();
+      if (isSharingAvailable) {
+        await Sharing.shareAsync(uri, { mimeType: undefined, dialogTitle: 'Mở tệp tin' });
+      } else {
+        Alert.alert('Thành công', 'Đã lưu file tại bộ nhớ ứng dụng.');
+      }
+    } catch (e: any) {
+      setIsLoadingHistory(false);
+      Alert.alert('Lỗi', 'Không thể tải tệp: ' + e.message);
+    }
   };
 
   useEffect(() => {
@@ -356,38 +599,53 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
   };
 
   const renderMessageContent = (msg: any) => {
+    const client = getMatrixClient();
+    if (msg.msgType?.startsWith('m.call')) {
+      let iconColor = msg.isMe ? "#fff" : "#dcb8ff";
+      if (msg.msgType === 'm.call.missed') iconColor = "#ef4444";
+      else if (msg.msgType === 'm.call.ended') iconColor = msg.isMe ? "#fff" : "#a0a0a0";
+
+      const isVideo = msg.text.includes('📹');
+      return (
+        <View className="flex-row items-center gap-2 px-1 py-1">
+          {msg.msgType === 'm.call.missed' ? <PhoneOff size={18} color={iconColor} /> : (isVideo ? <Video size={18} color={iconColor} /> : <Phone size={18} color={iconColor} />)}
+          <Text className={`text-sm ${msg.msgType === 'm.call.missed' ? 'text-[#ef4444] font-medium' : (msg.msgType === 'm.call.ended' ? 'text-white/80' : 'text-white font-medium')}`}>{msg.text}</Text>
+        </View>
+      );
+    }
     if (msg.msgType === 'm.image' && msg.mediaUrl) {
       return (
         <View className="overflow-hidden rounded-lg">
-          <Image source={{ uri: msg.mediaUrl }} style={{ width: 220, height: 220, resizeMode: 'cover' }} />
+          <MatrixImage url={msg.mediaUrl} client={client} />
         </View>
       );
     }
     if (msg.msgType === 'm.audio' && msg.mediaUrl) {
       const isPlaying = playingAudioId === msg.id;
+      const durationSecs = msg.info?.duration ? Math.round(msg.info.duration / 1000) : 0;
       return (
-        <TouchableOpacity onPress={() => playAudio(msg.mediaUrl, msg.id)} className="flex-row items-center gap-3 w-48 py-1">
+        <TouchableOpacity onPress={() => playAudio(msg.mediaUrl, msg.id, msg)} className="flex-row items-center gap-3 w-48 py-1">
           <View className={`w-10 h-10 rounded-full flex items-center justify-center ${msg.isMe ? 'bg-background/20' : 'bg-primary/20'}`}>
             {isPlaying ? <View className="w-3 h-3 bg-white rounded-sm" /> : <Play size={20} color={msg.isMe ? "#fff" : "#dcb8ff"} style={{ marginLeft: 3 }} />}
           </View>
           <View className="flex-1 h-1 bg-white/30 rounded-full overflow-hidden">
              <View className={`h-full ${isPlaying ? 'w-full' : 'w-0'} bg-white`} />
           </View>
-          <Text className="text-white text-xs">{formatDurationStr(0)}</Text>
+          <Text className="text-white text-xs">{formatDurationStr(durationSecs)}</Text>
         </TouchableOpacity>
       );
     }
     if (msg.msgType === 'm.file' || msg.msgType === 'm.video') {
       return (
-        <View className="flex-row items-center gap-3">
+        <TouchableOpacity onPress={() => handleOpenFile(msg.mediaUrl, msg.fileName)} className="flex-row items-center gap-3">
           <View className="w-10 h-10 bg-white/10 rounded-lg flex items-center justify-center">
             <FileIcon size={20} color="#fff" />
           </View>
           <View className="flex-1 max-w-[150px]">
             <Text className="text-white text-sm" numberOfLines={1} ellipsizeMode="middle">{msg.text}</Text>
-            <Text className="text-white/60 text-xs mt-1">Tệp đính kèm</Text>
+            <Text className="text-white/60 text-xs mt-1">Nhấn để xem / Tải về</Text>
           </View>
-        </View>
+        </TouchableOpacity>
       );
     }
     return <Text className="text-base text-white" style={{ includeFontPadding: false }}>{msg.text}</Text>;
