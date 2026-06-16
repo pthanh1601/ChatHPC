@@ -20,41 +20,70 @@ const formatDurationStr = (seconds: number) => {
   return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 };
 
-const MatrixImage = ({ url, client }: { url: string, client: any }) => {
+const MatrixImage = ({ url, client, info: fileInfo, eventId, mxcUrl }: { url: string, client: any, info: any, eventId: string, mxcUrl?: string | null }) => {
   const [localUri, setLocalUri] = useState<string | null>(null);
-  const [error, setError] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!url) return;
+    let isMounted = true;
+
     const loadImg = async () => {
       try {
-        const safeId = url.replace(/[^a-zA-Z0-9]/g, '_').substring(Math.max(0, url.length - 30));
+        // Tạo một ID an toàn và duy nhất cho cache, sử dụng eventId nếu có
+        const cacheKey = mxcUrl || url;
+        const safeId = cacheKey.replace(/[^a-zA-Z0-9]/g, '_');
         const fileUri = FileSystem.cacheDirectory + 'img_v3_' + safeId + '.jpg';
-        const info = await FileSystem.getInfoAsync(fileUri);
-        
-        if (info.exists) {
-          setLocalUri(fileUri);
-        } else {
-          const downloadResult = await FileSystem.downloadAsync(url, fileUri, {
-            headers: client?.getAccessToken() ? { Authorization: `Bearer ${client.getAccessToken()}` } : {}
-          });
-          if (downloadResult.status === 200) {
-            setLocalUri(downloadResult.uri);
-          } else {
-            setError(true);
-          }
+        const fileExists = await FileSystem.getInfoAsync(fileUri);
+
+        if (fileExists.exists) {
+          if (isMounted) setLocalUri(fileUri);
+          return;
         }
-      } catch (e) {
-        setError(true);
+
+        // Xử lý file mã hóa E2EE
+        if (fileInfo?.encryptedFileInfo) {
+          try {
+            const decryptedBuffer = await decryptMatrixFile(fileInfo.encryptedFileInfo);
+            const base64Data = Buffer.from(decryptedBuffer).toString('base64');
+            await FileSystem.writeAsStringAsync(fileUri, base64Data, {
+              encoding: FileSystem.EncodingType.Base64,
+            });
+            if (isMounted) setLocalUri(fileUri);
+          } catch (decryptError: any) {
+            console.error("Lỗi giải mã hình ảnh:", decryptError);
+            if (isMounted) setError("Không thể giải mã hình ảnh.");
+          }
+          return;
+        }
+
+        // Xử lý file không mã hóa (tải trực tiếp)
+        const downloadResult = await FileSystem.downloadAsync(url, fileUri, {
+          headers: client?.getAccessToken() ? { Authorization: `Bearer ${client.getAccessToken()}` } : {}
+        });
+
+        if (downloadResult.status === 200) {
+          if (isMounted) setLocalUri(downloadResult.uri);
+        } else {
+          if (isMounted) setError(`Không thể tải ảnh (mã lỗi ${downloadResult.status})`);
+        }
+      } catch (e: any) {
+        console.error("Lỗi tải hình ảnh:", e);
+        if (isMounted) setError(e.message || "Lỗi không xác định.");
       }
     };
+
     loadImg();
-  }, [url]);
+
+    return () => {
+      isMounted = false;
+    };
+  }, [url, eventId, fileInfo, mxcUrl]);
 
   if (error) {
     return (
-      <View className="w-[220px] h-[150px] bg-red-500/10 flex items-center justify-center rounded-lg border border-red-500/20">
-        <Text className="text-red-400 text-xs">Không thể tải ảnh</Text>
+      <View className="w-[220px] h-[150px] bg-red-500/10 flex items-center justify-center rounded-lg border border-red-500/20 p-2">
+        <Text className="text-red-400 text-xs text-center">{error}</Text>
       </View>
     );
   }
@@ -92,6 +121,7 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
         let text = "Tin nhắn không có nội dung";
         let msgType = "m.text";
         let mediaUrl = null;
+        let mxcUrl = null;
         let info = null;
         let fileName = 'file';
 
@@ -130,8 +160,8 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
           text = clear ? (clear.body || text) : "🔒 Tin nhắn đang được giải mã...";
           
           if (clear) {
-            if (clear.url) mediaUrl = clear.url;
-            if (clear.file) mediaUrl = clear.file.url;
+            if (clear.url) mxcUrl = clear.url;
+            if (clear.file) mxcUrl = clear.file.url;
             if (clear.body) fileName = clear.body;
             
             info = clear.info || {};
@@ -143,13 +173,16 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
           const content = e.getContent();
           msgType = content.msgtype || "m.text";
           text = content.body || text;
-          if (content.url) mediaUrl = content.url;
+          if (content.url) mxcUrl = content.url;
           if (content.body) fileName = content.body;
           info = content.info;
         }
 
-        if (mediaUrl && mediaUrl.startsWith('mxc://')) {
-          mediaUrl = client.mxcUrlToHttp(mediaUrl);
+        if (mxcUrl) {
+          let generatedUrl = client.mxcUrlToHttp(mxcUrl);
+          if (generatedUrl) {
+            mediaUrl = generatedUrl.replace(/\/_matrix\/media\/(r0|v3)\/(download|thumbnail)\//, '/_matrix/client/v1/media/$2/');
+          }
         }
 
         return {
@@ -161,6 +194,7 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
           senderName: room.getMember(e.getSender())?.name || e.getSender(),
           msgType,
           mediaUrl,
+          mxcUrl,
           fileName,
           info,
           matrixEvent: e
@@ -173,9 +207,14 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
   const [roomInfo, setRoomInfo] = useState(() => {
     const client = getMatrixClient();
     const room = client?.getRoom(currentActiveRoomId || '');
+    let avatarUrl = room?.getAvatarUrl(client?.getHomeserverUrl() || '', 96, 96, 'crop', false, false);
+    if (avatarUrl) {
+      avatarUrl = avatarUrl.replace(/\/_matrix\/media\/(r0|v3)\/(download|thumbnail)\//, '/_matrix/client/v1/media/$2/');
+    }
+    
     return {
       name: room?.name || 'Phòng chat',
-      avatar: room?.getAvatarUrl(client?.getHomeserverUrl() || '', 96, 96, 'crop', false, false) || CONTACTS.kael.avatar,
+      avatar: avatarUrl || CONTACTS.kael.avatar,
       members: room?.getJoinedMemberCount() || 0
     };
   });
@@ -223,9 +262,21 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
           type: asset.mimeType?.startsWith('image/') ? asset.mimeType : (asset.type === 'video' ? 'video/mp4' : 'image/jpeg'),
           size: asset.fileSize
         };
-        matrixService.uploadFile(currentActiveRoomId!, file).catch(err => {
-          Alert.alert('Lỗi', 'Không thể gửi hình ảnh: ' + err.message);
-        });
+        // Tối ưu: Thêm cơ chế pre-cache cho người gửi giống như gửi file ghi âm
+        matrixService.uploadFile(currentActiveRoomId!, file)
+          .then((response: any) => {
+            // Sau khi gửi thành công, copy file gốc vào cache với key là mxcUrl
+            // để MatrixImage có thể hiển thị ngay lập tức mà không cần download/decrypt
+            if (response && response.mxcUrl) {
+              const safeId = response.mxcUrl.replace(/[^a-zA-Z0-9]/g, '_');
+              const targetCacheUri = FileSystem.cacheDirectory + 'img_v3_' + safeId + '.jpg';
+              FileSystem.copyAsync({ from: asset.uri, to: targetCacheUri }).catch((copyErr) => {
+                console.warn("Lỗi pre-cache hình ảnh (dùng mxcUrl):", copyErr);
+              });
+            }
+          }).catch(err => {
+            Alert.alert('Lỗi', 'Không thể gửi hình ảnh: ' + err.message);
+          });
         shouldScrollRef.current = true;
       }
     } catch (e) { console.error(e); }
@@ -289,9 +340,9 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
           },
           duration: finalDurationMs 
         };
-        matrixService.uploadFile(currentActiveRoomId, file).then((uploadedEvent: any) => {
-          if (uploadedEvent && uploadedEvent.event_id) {
-            const safeId = uploadedEvent.event_id.replace(/[^a-zA-Z0-9]/g, '_');
+        matrixService.uploadFile(currentActiveRoomId, file).then((response: any) => {
+          if (response && response.mxcUrl) {
+            const safeId = response.mxcUrl.replace(/[^a-zA-Z0-9]/g, '_');
             const targetCacheUri = FileSystem.cacheDirectory + 'audio_v3_' + safeId + '.m4a';
             FileSystem.copyAsync({ from: uri, to: targetCacheUri }).catch(() => {});
           }
@@ -309,7 +360,7 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
     }
   };
 
-  const playAudio = async (url: string, id: string, msgItem?: any) => {
+  const playAudio = async (url: string, id: string, msgItem?: any, mxcUrl?: string | null) => {
     if (playingAudioId === id) {
       await audioPlayerRef.current?.stopAsync();
       setPlayingAudioId(null);
@@ -326,7 +377,8 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
       if (!client) return;
 
       let playUrl = "";
-      const safeId = (id || 'unknown').replace(/[^a-zA-Z0-9]/g, '_');
+      const cacheKey = mxcUrl || url;
+      const safeId = cacheKey.replace(/[^a-zA-Z0-9]/g, '_');
       const cacheUri = FileSystem.cacheDirectory + 'audio_v3_' + safeId + '.m4a';
       const checkCache = await FileSystem.getInfoAsync(cacheUri);
       
@@ -354,6 +406,7 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
           console.error("Lỗi giải mã E2EE, thử nghiệm luồng fallback tải trực tiếp...", decryptError);
           let downloadUrl = url.startsWith('mxc://') ? client.mxcUrlToHttp(url) : url;
           if (!downloadUrl) throw new Error("Không thể phân giải mã URL từ server");
+          downloadUrl = downloadUrl.replace(/\/_matrix\/media\/(r0|v3)\/(download|thumbnail)\//, '/_matrix/client/v1/media/$2/');
 
           const downloadResult = await FileSystem.downloadAsync(downloadUrl, cacheUri, {
             headers: client.getAccessToken() ? { Authorization: `Bearer ${client.getAccessToken()}` } : {}
@@ -366,6 +419,7 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
       } else {
         let downloadUrl = url.startsWith('mxc://') ? client.mxcUrlToHttp(url) : url;
         if (!downloadUrl) throw new Error("Không thể phân giải mã URL từ server");
+        downloadUrl = downloadUrl.replace(/\/_matrix\/media\/(r0|v3)\/(download|thumbnail)\//, '/_matrix/client/v1/media/$2/');
 
         const downloadResult = await FileSystem.downloadAsync(downloadUrl, cacheUri, {
           headers: client.getAccessToken() ? { Authorization: `Bearer ${client.getAccessToken()}` } : {}
@@ -616,7 +670,7 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
     if (msg.msgType === 'm.image' && msg.mediaUrl) {
       return (
         <View className="overflow-hidden rounded-lg">
-          <MatrixImage url={msg.mediaUrl} client={client} />
+          <MatrixImage url={msg.mediaUrl} client={client} info={msg.info} eventId={msg.id} mxcUrl={msg.mxcUrl} />
         </View>
       );
     }
@@ -624,7 +678,7 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
       const isPlaying = playingAudioId === msg.id;
       const durationSecs = msg.info?.duration ? Math.round(msg.info.duration / 1000) : 0;
       return (
-        <TouchableOpacity onPress={() => playAudio(msg.mediaUrl, msg.id, msg)} className="flex-row items-center gap-3 w-48 py-1">
+        <TouchableOpacity onPress={() => playAudio(msg.mediaUrl, msg.id, msg, msg.mxcUrl)} className="flex-row items-center gap-3 w-48 py-1">
           <View className={`w-10 h-10 rounded-full flex items-center justify-center ${msg.isMe ? 'bg-background/20' : 'bg-primary/20'}`}>
             {isPlaying ? <View className="w-3 h-3 bg-white rounded-sm" /> : <Play size={20} color={msg.isMe ? "#fff" : "#dcb8ff"} style={{ marginLeft: 3 }} />}
           </View>

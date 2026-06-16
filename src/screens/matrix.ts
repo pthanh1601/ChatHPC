@@ -350,9 +350,15 @@ class MatrixService extends EventEmitter {
         });
     }
 
-    async uploadFile(roomId: string, file: { uri: string, type: string, name: string, size?: number }) {
+    async uploadFile(roomId: string, file: { 
+        uri: string, 
+        type: string, 
+        name: string, 
+        size?: number,
+        info?: any 
+    }) {
         if (!this.client) return;
-        
+
         // Chuyển đổi tệp từ URI của thiết bị sang định dạng Blob để SDK có thể tải lên
         const response = await fetch(file.uri);
         const blob = await response.blob();
@@ -363,13 +369,29 @@ class MatrixService extends EventEmitter {
             type: file.type,
             rawResponse: false
         });
+        const content_uri = uploadResponse.content_uri || uploadResponse;
+
+        let msgtype = 'm.file';
+        if (file.type?.startsWith('image/')) msgtype = 'm.image';
+        else if (file.type?.startsWith('audio/')) msgtype = 'm.audio';
+        else if (file.type?.startsWith('video/')) msgtype = 'm.video';
+
         const content = {
             body: file.name || "Attachment",
-            msgtype: file.type?.startsWith('image/') ? 'm.image' : (file.type?.startsWith('audio/') ? 'm.audio' : 'm.file'),
-            url: uploadResponse.content_uri || uploadResponse,
-            info: { mimetype: file.type, size: file.size }
+            msgtype: msgtype,
+            url: content_uri,
+            info: { 
+                mimetype: file.type, 
+                size: file.size,
+                ...file.info
+            }
         };
-        return await this.client.sendEvent(roomId, "m.room.message", content);
+
+        const sendResponse = await this.client.sendEvent(roomId, "m.room.message", content);
+        return {
+            ...sendResponse,
+            mxcUrl: content_uri
+        };
     }
 
     async searchUsers(term: string) {
@@ -571,6 +593,38 @@ class MatrixService extends EventEmitter {
     sendTyping(roomId: string, isTyping: boolean) {
         if (!this.client) return;
         this.client.sendTyping(roomId, isTyping, 30000);
+    }
+}
+
+export async function decryptMatrixFile(file: any) {
+    const client = getMatrixClient();
+    if (!client || !client.isCryptoEnabled() || !file || !file.url) {
+        throw new Error("Crypto is not enabled or file info is missing.");
+    }
+
+    try {
+        let httpUrl = client.mxcUrlToHttp(file.url);
+        if (httpUrl) {
+            httpUrl = httpUrl.replace(/\/_matrix\/media\/(r0|v3)\/(download|thumbnail)\//, '/_matrix/client/v1/media/$2/');
+        }
+        const headers: any = {};
+        if (client.getAccessToken()) {
+            headers['Authorization'] = `Bearer ${client.getAccessToken()}`;
+        }
+        const response = await fetch(httpUrl, { headers });
+        if (!response.ok) {
+            throw new Error(`Failed to fetch encrypted file: HTTP ${response.status}`);
+        }
+        const encryptedBody = await response.arrayBuffer();
+        const decryptedBody = await client.getCrypto().decryptFile(encryptedBody, file);
+        return decryptedBody;
+    } catch (e: any) {
+        if (e.name === 'DecryptionError') {
+            console.warn("Failed to decrypt file:", e);
+            throw new Error("Decryption failed. The sender's keys might not be available.");
+        }
+        console.error("Error decrypting file:", e);
+        throw e;
     }
 }
 
