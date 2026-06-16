@@ -2,6 +2,9 @@ import 'react-native-get-random-values';
 import * as sdk from 'matrix-js-sdk';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
+import * as FileSystem from 'expo-file-system';
+import CryptoJS from 'crypto-js';
+import { Buffer } from 'buffer';
 import { EventEmitter } from 'events';
 // @ts-ignore
 import OlmInstance from '@matrix-org/olm/olm_legacy.js';
@@ -359,12 +362,12 @@ class MatrixService extends EventEmitter {
     }) {
         if (!this.client) return;
 
-        // Chuyển đổi tệp từ URI của thiết bị sang định dạng Blob để SDK có thể tải lên
-        const response = await fetch(file.uri);
-        const blob = await response.blob();
-        (blob as any).name = file.name;
+        // Đọc file an toàn trên React Native bằng FileSystem thay vì fetch().blob()
+        const base64Data = await FileSystem.readAsStringAsync(file.uri, { encoding: FileSystem.EncodingType.Base64 });
+        const buffer = Buffer.from(base64Data, 'base64');
+        (buffer as any).name = file.name;
 
-        const uploadResponse = await this.client.uploadContent(blob, {
+        const uploadResponse = await this.client.uploadContent(buffer, {
             name: file.name,
             type: file.type,
             rawResponse: false
@@ -598,8 +601,8 @@ class MatrixService extends EventEmitter {
 
 export async function decryptMatrixFile(file: any) {
     const client = getMatrixClient();
-    if (!client || !client.isCryptoEnabled() || !file || !file.url) {
-        throw new Error("Crypto is not enabled or file info is missing.");
+    if (!client || !file || !file.url) {
+        throw new Error("File info is missing.");
     }
 
     try {
@@ -611,18 +614,42 @@ export async function decryptMatrixFile(file: any) {
         if (client.getAccessToken()) {
             headers['Authorization'] = `Bearer ${client.getAccessToken()}`;
         }
-        const response = await fetch(httpUrl, { headers });
-        if (!response.ok) {
-            throw new Error(`Failed to fetch encrypted file: HTTP ${response.status}`);
+        
+        // Dùng expo-file-system để download file mã hóa về máy
+        const tempUri = FileSystem.cacheDirectory + 'enc_' + Date.now();
+        const downloadResult = await FileSystem.downloadAsync(httpUrl, tempUri, { headers });
+        if (downloadResult.status !== 200) {
+            throw new Error(`Failed to fetch encrypted file: HTTP ${downloadResult.status}`);
         }
-        const encryptedBody = await response.arrayBuffer();
-        const decryptedBody = await client.getCrypto().decryptFile(encryptedBody, file);
-        return decryptedBody;
+
+        // Đọc file mã hóa dưới dạng Base64
+        const encryptedBase64 = await FileSystem.readAsStringAsync(downloadResult.uri, { encoding: FileSystem.EncodingType.Base64 });
+        
+        // Chuẩn bị khóa giải mã (Chuyển Base64URL sang Base64 chuẩn)
+        const keyBase64 = file.key.k.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - (file.key.k.length % 4)) % 4);
+        const ivBase64 = file.iv.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - (file.iv.length % 4)) % 4);
+
+        const key = CryptoJS.enc.Base64.parse(keyBase64);
+        const iv = CryptoJS.enc.Base64.parse(ivBase64);
+        const ciphertext = CryptoJS.enc.Base64.parse(encryptedBase64);
+
+        const cipherParams = CryptoJS.lib.CipherParams.create({ ciphertext: ciphertext });
+
+        // Giải mã bằng AES-CTR
+        const decrypted = CryptoJS.AES.decrypt(cipherParams, key, {
+            iv: iv,
+            mode: CryptoJS.mode.CTR,
+            padding: CryptoJS.pad.NoPadding
+        });
+
+        // Trả về chuỗi Base64 của tệp tin đã được giải mã
+        const decryptedBase64 = CryptoJS.enc.Base64.stringify(decrypted);
+        
+        // Xóa file tạm
+        FileSystem.deleteAsync(tempUri).catch(() => {});
+
+        return decryptedBase64;
     } catch (e: any) {
-        if (e.name === 'DecryptionError') {
-            console.warn("Failed to decrypt file:", e);
-            throw new Error("Decryption failed. The sender's keys might not be available.");
-        }
         console.error("Error decrypting file:", e);
         throw e;
     }

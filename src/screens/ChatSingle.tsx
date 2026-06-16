@@ -44,8 +44,7 @@ const MatrixImage = ({ url, client, info: fileInfo, eventId, mxcUrl }: { url: st
         // Xử lý file mã hóa E2EE
         if (fileInfo?.encryptedFileInfo) {
           try {
-            const decryptedBuffer = await decryptMatrixFile(fileInfo.encryptedFileInfo);
-            const base64Data = Buffer.from(decryptedBuffer).toString('base64');
+            const base64Data = await decryptMatrixFile(fileInfo.encryptedFileInfo);
             await FileSystem.writeAsStringAsync(fileUri, base64Data, {
               encoding: FileSystem.EncodingType.Base64,
             });
@@ -391,11 +390,7 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
           const encryptedFileInfo = msgItem.info.encryptedFileInfo;
           
           // Gọi helper bẻ khóa attachment từ ArrayBuffer
-          const decryptedBuffer = await decryptMatrixFile(encryptedFileInfo);
-          
-          // Chuyển đổi ArrayBuffer thu được sang chuỗi Base64 để ghi vào hệ thống Expo FileSystem
-          // Tối ưu: Dùng `Buffer` (đã được polyfill ở index.js) thay vì btoa
-          const base64Data = Buffer.from(decryptedBuffer).toString('base64');
+          const base64Data = await decryptMatrixFile(encryptedFileInfo);
 
           await FileSystem.writeAsStringAsync(cacheUri, base64Data, {
             encoding: FileSystem.EncodingType.Base64,
