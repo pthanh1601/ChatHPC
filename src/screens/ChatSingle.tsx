@@ -173,8 +173,12 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
           msgType = content.msgtype || "m.text";
           text = content.body || text;
           if (content.url) mxcUrl = content.url;
+          if (content.file) mxcUrl = content.file.url;
           if (content.body) fileName = content.body;
-          info = content.info;
+          info = content.info || {};
+          if (content.file && !info.encryptedFileInfo) {
+            info.encryptedFileInfo = content.file;
+          }
         }
 
         if (mxcUrl) {
@@ -235,6 +239,7 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
   const [isRecording, setIsRecording] = useState(false);
   const [recordDuration, setRecordDuration] = useState(0);
   const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
+  const [audioProgress, setAudioProgress] = useState<{ id: string, progress: number } | null>(null);
   const audioPlayerRef = useRef<Audio.Sound | null>(null);
 
   useEffect(() => {
@@ -330,14 +335,12 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
       if (send && uri && currentActiveRoomId) {
         const file = { 
           uri, 
-          name: 'voice_message.m4a', 
-          type: 'audio/m4a', 
+          name: 'voice_message.mp4', 
+          type: 'audio/mp4', 
           size: status.fileSize || 0,
           info: {
-            duration: finalDurationMs,
-            mimetype: 'audio/m4a'
-          },
-          duration: finalDurationMs 
+            duration: finalDurationMs
+          }
         };
         matrixService.uploadFile(currentActiveRoomId, file).then((response: any) => {
           if (response && response.mxcUrl) {
@@ -363,6 +366,7 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
     if (playingAudioId === id) {
       await audioPlayerRef.current?.stopAsync();
       setPlayingAudioId(null);
+      setAudioProgress(null);
       return;
     }
     if (audioPlayerRef.current) {
@@ -371,6 +375,8 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
         await audioPlayerRef.current.unloadAsync();
       } catch (e) {}
     }
+    setAudioProgress({ id, progress: 0 });
+    let errorCacheUri = "";
     try {
       const client = getMatrixClient();
       if (!client) return;
@@ -379,11 +385,12 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
       const cacheKey = mxcUrl || url;
       const safeId = cacheKey.replace(/[^a-zA-Z0-9]/g, '_');
       const cacheUri = FileSystem.cacheDirectory + 'audio_v3_' + safeId + '.m4a';
+      errorCacheUri = cacheUri;
       const checkCache = await FileSystem.getInfoAsync(cacheUri);
       
       if (checkCache.exists) {
         playUrl = cacheUri;
-      } else if (msgItem?.matrixEvent?.isEncrypted() && msgItem?.info?.encryptedFileInfo) {
+      } else if (msgItem?.info?.encryptedFileInfo) {
         setIsLoadingHistory(true); 
         
         try {
@@ -439,12 +446,22 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
       audioPlayerRef.current = sound;
       setPlayingAudioId(id);
       sound.setOnPlaybackStatusUpdate((status: any) => {
-        if (status.isLoaded && status.didJustFinish) {
-          setPlayingAudioId(null);
+        if (status.isLoaded) {
+          if (status.durationMillis) {
+            setAudioProgress({ id, progress: status.positionMillis / status.durationMillis });
+          }
+          if (status.didJustFinish) {
+            setPlayingAudioId(null);
+            setAudioProgress(null);
+          }
         }
       });
     } catch (e: any) { 
       console.error("Lỗi phát audio chi tiết:", e); 
+      // Xóa tệp âm thanh bị hỏng trong bộ nhớ đệm nếu phát thất bại để có thể thử lại
+      if (errorCacheUri) {
+        FileSystem.deleteAsync(errorCacheUri, { idempotent: true }).catch(() => {});
+      }
       Alert.alert("Lỗi", "Không thể phát tin nhắn thoại này. Tệp tin đang được đồng bộ hoặc chưa thể giải mã mã hóa đầu cuối.");
       setPlayingAudioId(null);
     }
@@ -671,16 +688,22 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
     }
     if (msg.msgType === 'm.audio' && msg.mediaUrl) {
       const isPlaying = playingAudioId === msg.id;
-      const durationSecs = msg.info?.duration ? Math.round(msg.info.duration / 1000) : 0;
+      const progress = isPlaying && audioProgress?.id === msg.id ? audioProgress.progress * 100 : 0;
+      
+      let displaySecs = msg.info?.duration ? Math.round(msg.info.duration / 1000) : 0;
+      if (isPlaying && audioProgress?.id === msg.id) {
+        displaySecs = Math.floor((audioProgress.progress * (msg.info?.duration || 0)) / 1000);
+      }
+
       return (
         <TouchableOpacity onPress={() => playAudio(msg.mediaUrl, msg.id, msg, msg.mxcUrl)} className="flex-row items-center gap-3 w-48 py-1">
           <View className={`w-10 h-10 rounded-full flex items-center justify-center ${msg.isMe ? 'bg-background/20' : 'bg-primary/20'}`}>
             {isPlaying ? <View className="w-3 h-3 bg-white rounded-sm" /> : <Play size={20} color={msg.isMe ? "#fff" : "#dcb8ff"} style={{ marginLeft: 3 }} />}
           </View>
           <View className="flex-1 h-1 bg-white/30 rounded-full overflow-hidden">
-             <View className={`h-full ${isPlaying ? 'w-full' : 'w-0'} bg-white`} />
+             <View className="h-full bg-white" style={{ width: `${progress}%` }} />
           </View>
-          <Text className="text-white text-xs">{formatDurationStr(durationSecs)}</Text>
+          <Text className="text-white text-xs">{formatDurationStr(displaySecs)}</Text>
         </TouchableOpacity>
       );
     }

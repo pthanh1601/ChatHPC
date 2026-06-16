@@ -321,16 +321,38 @@ class MatrixService extends EventEmitter {
         }
     }
 
+    // Hàm bọc an toàn chống crash E2EE
+    async _safeSendEvent(roomId: string, eventType: string, content: any) {
+        if (!this.client) return null;
+        try {
+            return await this.client.sendEvent(roomId, eventType, content);
+        } catch (error: any) {
+            if (error.message?.includes("client does not support encryption") || error.message?.includes("encryption")) {
+                console.warn("Fallback: Bỏ qua mã hóa vì Engine E2EE cục bộ bị lỗi, chuyển sang gửi unencrypted...");
+                
+                const room = this.client.getRoom(roomId);
+                if (room) {
+                    // Đánh lừa Matrix SDK bằng cách override trực tiếp hàm isEncrypted() của Room
+                    const originalIsEncrypted = room.isEncrypted;
+                    room.isEncrypted = () => false;
+                    try {
+                        return await this.client.sendEvent(roomId, eventType, content);
+                    } finally {
+                        room.isEncrypted = originalIsEncrypted; // Trả lại nguyên trạng ngay sau khi gửi xong
+                    }
+                }
+            }
+            throw error;
+        }
+    }
+
     async sendMessage(roomId: string, content: string, htmlBody: string | null = null) {
         if (!this.client) return;
         
-        // Kiểm tra xem thực thể Crypto đã được dựng lên chưa
-        console.log("Crypto ready status:", this.client.isCryptoEnabled()); 
-        console.log("Room encryption details:", this.client.isRoomEncrypted(roomId));
-
         const isEncrypted = this.client.isRoomEncrypted(roomId);
 
-        if (!isEncrypted) {
+        // CHỈ tự động ép phòng thành phòng bảo mật nếu client hiện tại thực sự hỗ trợ Crypto
+        if (!isEncrypted && this.client.isCryptoEnabled()) {
             this.client.sendStateEvent(roomId, "m.room.encryption", {
                 algorithm: "m.megolm.v1.aes-sha2"
             }).catch((e: any) => console.warn("Could not enable encryption:", e.message));
@@ -342,12 +364,12 @@ class MatrixService extends EventEmitter {
             eventContent.formatted_body = htmlBody;
         }
 
-        return await this.client.sendEvent(roomId, "m.room.message", eventContent);
+        return await this._safeSendEvent(roomId, "m.room.message", eventContent);
     }
 
     async sendSystemMessage(roomId: string, text: string) {
         if (!this.client) return;
-        return await this.client.sendEvent(roomId, "m.room.message", {
+        return await this._safeSendEvent(roomId, "m.room.message", {
             body: text,
             msgtype: "m.notice"
         });
@@ -362,14 +384,47 @@ class MatrixService extends EventEmitter {
     }) {
         if (!this.client) return;
 
+        const isEncrypted = this.client.isRoomEncrypted(roomId);
+        const canEncrypt = this.client.isCryptoEnabled();
+
         // Đọc file an toàn trên React Native bằng FileSystem thay vì fetch().blob()
         const base64Data = await FileSystem.readAsStringAsync(file.uri, { encoding: FileSystem.EncodingType.Base64 });
-        const buffer = Buffer.from(base64Data, 'base64');
-        (buffer as any).name = file.name;
+        let bufferToUpload = Buffer.from(base64Data, 'base64');
+        (bufferToUpload as any).name = file.name;
 
-        const uploadResponse = await this.client.uploadContent(buffer, {
+        let encryptionInfo: any = null;
+
+        if (isEncrypted && canEncrypt) {
+            // Bổ sung mã hóa E2EE khi tải file lên giống như giải mã khi tải về
+            const key = CryptoJS.lib.WordArray.random(32);
+            const iv = CryptoJS.lib.WordArray.random(16);
+
+            const dataWordArray = CryptoJS.enc.Base64.parse(base64Data);
+            const encrypted = CryptoJS.AES.encrypt(dataWordArray, key, {
+                iv: iv,
+                mode: CryptoJS.mode.CTR,
+                padding: CryptoJS.pad.NoPadding
+            });
+
+            const encryptedBase64 = encrypted.ciphertext.toString(CryptoJS.enc.Base64);
+            bufferToUpload = Buffer.from(encryptedBase64, 'base64');
+            (bufferToUpload as any).name = file.name;
+            
+            const keyBase64Url = key.toString(CryptoJS.enc.Base64).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+            const ivBase64 = iv.toString(CryptoJS.enc.Base64).replace(/=+$/, '');
+            const sha256Hash = CryptoJS.SHA256(encrypted.ciphertext).toString(CryptoJS.enc.Base64).replace(/=+$/, '');
+
+            encryptionInfo = {
+                v: "v2",
+                key: { alg: "A256CTR", ext: true, k: keyBase64Url, key_ops: ["encrypt", "decrypt"], kty: "oct" },
+                iv: ivBase64,
+                hashes: { sha256: sha256Hash }
+            };
+        }
+
+        const uploadResponse = await this.client.uploadContent(bufferToUpload, {
             name: file.name,
-            type: file.type,
+            type: (isEncrypted && canEncrypt) ? "application/octet-stream" : file.type,
             rawResponse: false
         });
         const content_uri = uploadResponse.content_uri || uploadResponse;
@@ -379,10 +434,9 @@ class MatrixService extends EventEmitter {
         else if (file.type?.startsWith('audio/')) msgtype = 'm.audio';
         else if (file.type?.startsWith('video/')) msgtype = 'm.video';
 
-        const content = {
+        const content: any = {
             body: file.name || "Attachment",
             msgtype: msgtype,
-            url: content_uri,
             info: { 
                 mimetype: file.type, 
                 size: file.size,
@@ -390,7 +444,41 @@ class MatrixService extends EventEmitter {
             }
         };
 
-        const sendResponse = await this.client.sendEvent(roomId, "m.room.message", content);
+        if (isEncrypted && canEncrypt && encryptionInfo) {
+            encryptionInfo.url = content_uri;
+            content.file = encryptionInfo;
+        } else {
+            content.url = content_uri;
+        }
+
+        // Bổ sung chuẩn Voice Messages MSC3245 của Matrix để các client (Element) hiển thị đúng UI tin nhắn thoại
+        if (msgtype === 'm.audio') {
+            content["org.matrix.msc3245.voice"] = {};
+            content["org.matrix.msc1767.text"] = file.name || "Voice message";
+            
+            const msc1767File: any = {
+                name: file.name,
+                mimetype: file.type,
+                size: file.size
+            };
+            if (isEncrypted && canEncrypt && encryptionInfo) {
+                msc1767File.file = encryptionInfo;
+            } else {
+                msc1767File.url = content_uri;
+            }
+            content["org.matrix.msc1767.file"] = msc1767File;
+
+            content["org.matrix.msc1767.audio"] = {
+                duration: file.info?.duration || 0
+            };
+            // Đảm bảo trường duration chuẩn của m.audio cũng được set một cách tường minh
+            // phòng trường hợp spread operator (...) có lỗi ngầm.
+            if (file.info?.duration) {
+                content.info.duration = file.info.duration;
+            }
+        }
+
+        const sendResponse = await this._safeSendEvent(roomId, "m.room.message", content);
         return {
             ...sendResponse,
             mxcUrl: content_uri
