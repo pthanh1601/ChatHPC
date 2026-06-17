@@ -161,11 +161,25 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
           if (clear) {
             if (clear.url) mxcUrl = clear.url;
             if (clear.file) mxcUrl = clear.file.url;
+
+            // Fallback lấy URL từ chuẩn MSC1767 của Element
+            if (!mxcUrl && clear["org.matrix.msc1767.file"]) {
+              if (clear["org.matrix.msc1767.file"].url) mxcUrl = clear["org.matrix.msc1767.file"].url;
+              if (clear["org.matrix.msc1767.file"].file) mxcUrl = clear["org.matrix.msc1767.file"].file.url;
+            }
+
             if (clear.body) fileName = clear.body;
             
             info = clear.info || {};
             if (clear.file && !info.encryptedFileInfo) {
               info.encryptedFileInfo = clear.file;
+            } else if (!info.encryptedFileInfo && clear["org.matrix.msc1767.file"]?.file) {
+              info.encryptedFileInfo = clear["org.matrix.msc1767.file"].file;
+            }
+
+            // Fallback lấy Duration từ chuẩn MSC1767
+            if (!info.duration && clear["org.matrix.msc1767.audio"]?.duration) {
+              info.duration = clear["org.matrix.msc1767.audio"].duration;
             }
           }
         } else {
@@ -174,10 +188,22 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
           text = content.body || text;
           if (content.url) mxcUrl = content.url;
           if (content.file) mxcUrl = content.file.url;
+
+          if (!mxcUrl && content["org.matrix.msc1767.file"]) {
+            if (content["org.matrix.msc1767.file"].url) mxcUrl = content["org.matrix.msc1767.file"].url;
+            if (content["org.matrix.msc1767.file"].file) mxcUrl = content["org.matrix.msc1767.file"].file.url;
+          }
+
           if (content.body) fileName = content.body;
           info = content.info || {};
           if (content.file && !info.encryptedFileInfo) {
             info.encryptedFileInfo = content.file;
+          } else if (!info.encryptedFileInfo && content["org.matrix.msc1767.file"]?.file) {
+            info.encryptedFileInfo = content["org.matrix.msc1767.file"].file;
+          }
+
+          if (!info.duration && content["org.matrix.msc1767.audio"]?.duration) {
+            info.duration = content["org.matrix.msc1767.audio"].duration;
           }
         }
 
@@ -335,7 +361,7 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
       if (send && uri && currentActiveRoomId) {
         const file = { 
           uri, 
-          name: 'voice_message.mp4', 
+          name: 'voice_message.m4a', 
           type: 'audio/mp4', 
           size: status.fileSize || 0,
           info: {
@@ -384,7 +410,21 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
       let playUrl = "";
       const cacheKey = mxcUrl || url;
       const safeId = cacheKey.replace(/[^a-zA-Z0-9]/g, '_');
-      const cacheUri = FileSystem.cacheDirectory + 'audio_v3_' + safeId + '.m4a';
+      
+      // Đặt đúng đuôi mở rộng file để hệ điều hành giải mã được OGG, MP3, AAC...
+      let ext = '.m4a';
+      if (msgItem?.info?.mimetype) {
+        const mime = msgItem.info.mimetype.toLowerCase();
+        if (mime.includes('ogg')) ext = '.ogg';
+        else if (mime.includes('mp3') || mime.includes('mpeg')) ext = '.mp3';
+        else if (mime.includes('wav')) ext = '.wav';
+        else if (mime.includes('aac')) ext = '.aac';
+      } else if (msgItem?.fileName) {
+        const match = msgItem.fileName.match(/\.(\w+)$/);
+        if (match) ext = '.' + match[1].toLowerCase();
+      }
+
+      const cacheUri = FileSystem.cacheDirectory + 'audio_v3_' + safeId + ext;
       errorCacheUri = cacheUri;
       const checkCache = await FileSystem.getInfoAsync(cacheUri);
       
