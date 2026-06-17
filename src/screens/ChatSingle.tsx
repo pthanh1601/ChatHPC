@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { View, Text, Image, TouchableOpacity, TextInput, ScrollView, KeyboardAvoidingView, Platform, ActivityIndicator, LayoutAnimation, UIManager, Keyboard, Alert, Linking } from 'react-native';
 import { ArrowLeft, Phone, Video, CheckCheck, Plus, Mic, Send, ChevronDown, Image as ImageIcon, File as FileIcon, X, Play, Trash2, PhoneOff } from 'lucide-react-native';
-import { Audio } from 'expo-av';
+import { Audio, Video as ExpoVideo, ResizeMode } from 'expo-av';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { AppScreen, CONTACTS, MEDIA } from '../data';
@@ -96,6 +96,87 @@ const MatrixImage = ({ url, client, info: fileInfo, eventId, mxcUrl }: { url: st
   }
 
   return <Image source={{ uri: localUri }} style={{ width: 220, height: 220, resizeMode: 'cover' }} className="rounded-lg" />;
+};
+
+const MatrixVideo = ({ url, client, info: fileInfo, eventId, mxcUrl }: { url: string, client: any, info: any, eventId: string, mxcUrl?: string | null }) => {
+  const [localUri, setLocalUri] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const videoRef = useRef<ExpoVideo>(null);
+
+  useEffect(() => {
+    if (!url) return;
+    let isMounted = true;
+
+    const loadVid = async () => {
+      try {
+        const cacheKey = mxcUrl || url;
+        const safeId = cacheKey.replace(/[^a-zA-Z0-9]/g, '_');
+        const fileUri = FileSystem.cacheDirectory + 'vid_v3_' + safeId + '.mp4';
+        const fileExists = await FileSystem.getInfoAsync(fileUri);
+
+        if (fileExists.exists) {
+          if (isMounted) setLocalUri(fileUri);
+          return;
+        }
+
+        if (fileInfo?.encryptedFileInfo) {
+          try {
+            const base64Data = await decryptMatrixFile(fileInfo.encryptedFileInfo);
+            await FileSystem.writeAsStringAsync(fileUri, base64Data, {
+              encoding: FileSystem.EncodingType.Base64,
+            });
+            if (isMounted) setLocalUri(fileUri);
+          } catch (decryptError: any) {
+            console.error("Lỗi giải mã video:", decryptError);
+            if (isMounted) setError("Không thể giải mã video.");
+          }
+          return;
+        }
+
+        const downloadResult = await FileSystem.downloadAsync(url, fileUri, {
+          headers: client?.getAccessToken() ? { Authorization: `Bearer ${client.getAccessToken()}` } : {}
+        });
+
+        if (downloadResult.status === 200) {
+          if (isMounted) setLocalUri(downloadResult.uri);
+        } else {
+          if (isMounted) setError(`Không thể tải video (mã lỗi ${downloadResult.status})`);
+        }
+      } catch (e: any) {
+        console.error("Lỗi tải video:", e);
+        if (isMounted) setError(e.message || "Lỗi không xác định.");
+      }
+    };
+
+    loadVid();
+    return () => { isMounted = false; };
+  }, [url, eventId, fileInfo, mxcUrl]);
+
+  if (error) {
+    return (
+      <View className="w-[220px] h-[150px] bg-red-500/10 flex items-center justify-center rounded-lg border border-red-500/20 p-2">
+        <Text className="text-red-400 text-xs text-center">{error}</Text>
+      </View>
+    );
+  }
+
+  if (!localUri) {
+    return (
+      <View className="w-[220px] h-[220px] bg-white/5 flex items-center justify-center rounded-lg border border-white/10">
+        <ActivityIndicator color="#dcb8ff"/>
+      </View>
+    );
+  }
+
+  return (
+    <ExpoVideo
+      ref={videoRef}
+      source={{ uri: localUri }}
+      style={{ width: 220, height: 220, borderRadius: 8 }}
+      useNativeControls
+      resizeMode={ResizeMode.COVER}
+    />
+  );
 };
 
 export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void }) {
@@ -286,22 +367,23 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
       });
       if (!result.canceled && result.assets[0]) {
         const asset = result.assets[0];
+        const isVideo = asset.type === 'video';
         const file = {
           uri: asset.uri,
-          name: asset.fileName || asset.uri.split('/').pop() || 'image.jpg',
-          type: asset.mimeType?.startsWith('image/') ? asset.mimeType : (asset.type === 'video' ? 'video/mp4' : 'image/jpeg'),
+          name: asset.fileName || asset.uri.split('/').pop() || (isVideo ? 'video.mp4' : 'image.jpg'),
+          type: asset.mimeType || (isVideo ? 'video/mp4' : 'image/jpeg'),
           size: asset.fileSize
         };
         // Tối ưu: Thêm cơ chế pre-cache cho người gửi giống như gửi file ghi âm
         matrixService.uploadFile(currentActiveRoomId!, file)
           .then((response: any) => {
-            // Sau khi gửi thành công, copy file gốc vào cache với key là mxcUrl
-            // để MatrixImage có thể hiển thị ngay lập tức mà không cần download/decrypt
             if (response && response.mxcUrl) {
               const safeId = response.mxcUrl.replace(/[^a-zA-Z0-9]/g, '_');
-              const targetCacheUri = FileSystem.cacheDirectory + 'img_v3_' + safeId + '.jpg';
+              const prefix = isVideo ? 'vid_v3_' : 'img_v3_';
+              const ext = isVideo ? '.mp4' : '.jpg';
+              const targetCacheUri = FileSystem.cacheDirectory + prefix + safeId + ext;
               FileSystem.copyAsync({ from: asset.uri, to: targetCacheUri }).catch((copyErr) => {
-                console.warn("Lỗi pre-cache hình ảnh (dùng mxcUrl):", copyErr);
+                console.warn("Lỗi pre-cache file (dùng mxcUrl):", copyErr);
               });
             }
           }).catch(err => {
@@ -747,7 +829,14 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
         </TouchableOpacity>
       );
     }
-    if (msg.msgType === 'm.file' || msg.msgType === 'm.video') {
+    if (msg.msgType === 'm.video' && msg.mediaUrl) {
+      return (
+        <View className="overflow-hidden rounded-lg bg-black">
+          <MatrixVideo url={msg.mediaUrl} client={client} info={msg.info} eventId={msg.id} mxcUrl={msg.mxcUrl} />
+        </View>
+      );
+    }
+    if (msg.msgType === 'm.file') {
       return (
         <TouchableOpacity onPress={() => handleOpenFile(msg.mediaUrl, msg.fileName)} className="flex-row items-center gap-3">
           <View className="w-10 h-10 bg-white/10 rounded-lg flex items-center justify-center">
