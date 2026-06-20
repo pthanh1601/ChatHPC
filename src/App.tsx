@@ -6,7 +6,8 @@ import { useState, useEffect, useRef } from 'react';
 import { View, PanResponder, LayoutAnimation, Platform, UIManager, BackHandler, Animated, Dimensions, TouchableOpacity, Text } from 'react-native';
 import { Phone, Video, Mic } from 'lucide-react-native';
 import { AppScreen } from './data';
-import { loginToMatrix, startMatrixSync, matrixService } from './screens/matrix';
+import { loginToMatrix, startMatrixSync, matrixService, setCurrentActiveRoomId } from './screens/matrix';
+import { setupNotificationCategories, setupNotificationListeners } from './services/notifications';
 import { BottomNav } from './components/BottomNav';
 import { Login } from './screens/Login';
 import { ChatList } from './screens/ChatList';
@@ -141,6 +142,21 @@ export default function App() {
     matrixService.on('call.update', onCallUpdate);
     return () => {
       matrixService.removeListener('call.update', onCallUpdate);
+    };
+  }, []);
+
+  // Khởi tạo và lắng nghe Push Notifications
+  useEffect(() => {
+    setupNotificationCategories();
+
+    const unsubscribe = setupNotificationListeners((roomId) => {
+      // Khi bấm vào thông báo, chuyển hướng tới phòng chat
+      setCurrentActiveRoomId(roomId);
+      handleSetScreen('chat_single');
+    });
+
+    return () => {
+      if (unsubscribe) unsubscribe();
     };
   }, []);
 

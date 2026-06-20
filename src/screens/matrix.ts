@@ -6,6 +6,8 @@ import * as FileSystem from 'expo-file-system';
 import CryptoJS from 'crypto-js';
 import { Buffer } from 'buffer';
 import { EventEmitter } from 'events';
+import { Platform, Alert, Share } from 'react-native';
+import { registerForPushNotificationsAsync, setupNotificationCategories } from '../services/notifications';
 // @ts-ignore
 import OlmInstance from '@matrix-org/olm/olm_legacy.js';
 
@@ -18,7 +20,7 @@ const MATRIX_BASE_URL = 'https://matrix.5hpc.com';
 const globalStore = global as any;
 
 if (!globalStore.__matrixClient) {
-  globalStore.__matrixClient = sdk.createClient({ baseUrl: MATRIX_BASE_URL });
+    globalStore.__matrixClient = sdk.createClient({ baseUrl: MATRIX_BASE_URL });
 }
 
 let matrixClient = globalStore.__matrixClient;
@@ -27,8 +29,8 @@ let matrixClient = globalStore.__matrixClient;
 export let currentActiveRoomId: string | null = globalStore.__currentActiveRoomId || null;
 
 export const setCurrentActiveRoomId = (id: string | null) => {
-  currentActiveRoomId = id;
-  globalStore.__currentActiveRoomId = id;
+    currentActiveRoomId = id;
+    globalStore.__currentActiveRoomId = id;
 };
 
 class MatrixService extends EventEmitter {
@@ -74,6 +76,17 @@ class MatrixService extends EventEmitter {
             deviceId: response.device_id,
             baseUrl: this.homeserverUrl
         };
+
+        setTimeout(() => {
+            Alert.alert(
+                "Access Token của bạn",
+                "Bấm Share để copy access_token này sang máy tính test Postman nhé!",
+                [
+                    { text: "Bỏ qua", style: "cancel" },
+                    { text: "Copy / Share", onPress: () => Share.share({ message: authData.accessToken }) }
+                ]
+            );
+        }, 1500);
 
         await AsyncStorage.setItem('matrix_session', JSON.stringify(authData));
         return await this.startSession(authData);
@@ -135,7 +148,7 @@ class MatrixService extends EventEmitter {
             getSecretStorageKey: async ({ keys, name }: any) => {
                 const keyObject = keys || {};
                 const keyIds = Object.keys(keyObject);
-                
+
                 for (const keyId of keyIds) {
                     if (this.secretKeys.has(keyId)) {
                         return [keyId, this.secretKeys.get(keyId)];
@@ -153,11 +166,11 @@ class MatrixService extends EventEmitter {
                 }
                 return null;
             },
-            cacheSecret: async (name: string, secret: any) => {}
+            cacheSecret: async (name: string, secret: any) => { }
         };
 
         // Sử dụng IndexedDBStore giống bản Web (nhờ fake-indexeddb). Fake localstorage để không văng lỗi.
-        const mockLocalStorage = { getItem: () => null, setItem: () => {}, removeItem: () => {} };
+        const mockLocalStorage = { getItem: () => null, setItem: () => { }, removeItem: () => { } };
         const store = (global as any).indexedDB ? new sdk.IndexedDBStore({
             indexedDB: (global as any).indexedDB,
             localStorage: (global as any).localStorage || mockLocalStorage,
@@ -188,7 +201,7 @@ class MatrixService extends EventEmitter {
             await this.client.initCrypto();
 
             this.client.setGlobalErrorOnUnknownDevices(false);
-            
+
             this.client.getSecretStorageKey = cryptoCallbacks.getSecretStorageKey;
             console.log("✅ Crypto Initialized!");
         } catch (e: any) {
@@ -200,15 +213,68 @@ class MatrixService extends EventEmitter {
             }
         }
 
-        await this.client.startClient({ initialSyncLimit: 20 });
+        const registerMatrixPusher = async (matrixClientInstance: any) => {
+            try {
+                const token = await registerForPushNotificationsAsync();
+                if (!token) {
+                    console.log("⏳ Token chưa sẵn sàng, thử lại sau 3 giây...");
+                    setTimeout(() => registerMatrixPusher(matrixClientInstance), 3000);
+                    return;
+                }
+
+                const pureTokenString = String(token).trim();
+                const currentPlatform = __DEV__ ? 'sandbox' : 'production';
+                const currentTopic = 'chatapp.5hpc.app';
+
+                console.log(`📡 [Element Mode] Tiến hành đẩy Pusher lên Homeserver...`);
+
+                await matrixClientInstance.setPusher({
+                    app_display_name: 'ChatHPC',
+                    app_id: 'chatapp.5hpc.app',
+                    pushkey: pureTokenString,
+                    kind: 'http',
+                    data: {
+                        url: 'https://sygnal.5hpc.com/_matrix/push/v1/notify',
+                        platform: currentPlatform,
+                        topic: currentTopic,
+                        format: 'event_id_only',
+                        
+                        // 🌟 BỔ SUNG ĐOẠN ĐÁNH LỪA APPLE APNS GIỐNG HỆT CÁCH ELEMENT LÀM
+                        default_payload: {
+                            aps: {
+                                alert: {
+                                    "loc-key": "Notification",
+                                    "loc-args": []
+                                },
+                                "mutable-content": 1, // Bắt buộc để thức dậy Background Task giải mã tin nhắn
+                                sound: "default"
+                            }
+                        }
+                    },
+                    append: true,
+                    device_display_name: Platform.OS + ' Device',
+                    profile_tag: 'ChatHPC_IOS_Pusher',
+                    lang: 'vi'
+                });
+                console.log(`✅ [Element Mode] Đăng ký Pusher THÀNH CÔNG trên Homeserver!`);
+            } catch (error) {
+                console.error("❌ Lỗi khi đăng ký Pusher, thử lại sau 5 giây:", error);
+                setTimeout(() => registerMatrixPusher(matrixClientInstance), 5000);
+            }
+        };
 
         this.client.once('sync', (state: string) => {
             if (state === 'PREPARED') {
                 console.log("🚀 Client PREPARED");
                 this.emit('prepared');
-                
+
+                setupNotificationCategories();
+
+                // Gọi hàm kích hoạt đăng ký liên tục đến khi nào Homeserver nhận thì thôi
+                registerMatrixPusher(this.client);
+
                 // TODO: voipService.init(); nếu có
-                
+
                 if (this.client.getCrypto()) {
                     this.client.on("crypto.verification.request" as any, (request: any) => {
                         this._handleVerificationRequest(request);
@@ -225,6 +291,8 @@ class MatrixService extends EventEmitter {
                 });
             }
         });
+
+        await this.client.startClient({ initialSyncLimit: 20 });
 
         return this.client;
     }
@@ -329,7 +397,7 @@ class MatrixService extends EventEmitter {
         } catch (error: any) {
             if (error.message?.includes("client does not support encryption") || error.message?.includes("encryption")) {
                 console.warn("Fallback: Bỏ qua mã hóa vì Engine E2EE cục bộ bị lỗi, chuyển sang gửi unencrypted...");
-                
+
                 const room = this.client.getRoom(roomId);
                 if (room) {
                     // Đánh lừa Matrix SDK bằng cách override trực tiếp hàm isEncrypted() của Room
@@ -348,7 +416,7 @@ class MatrixService extends EventEmitter {
 
     async sendMessage(roomId: string, content: string, htmlBody: string | null = null) {
         if (!this.client) return;
-        
+
         const isEncrypted = this.client.isRoomEncrypted(roomId);
 
         // CHỈ tự động ép phòng thành phòng bảo mật nếu client hiện tại thực sự hỗ trợ Crypto
@@ -375,12 +443,12 @@ class MatrixService extends EventEmitter {
         });
     }
 
-    async uploadFile(roomId: string, file: { 
-        uri: string, 
-        type: string, 
-        name: string, 
+    async uploadFile(roomId: string, file: {
+        uri: string,
+        type: string,
+        name: string,
         size?: number,
-        info?: any 
+        info?: any
     }) {
         if (!this.client) return;
 
@@ -409,7 +477,7 @@ class MatrixService extends EventEmitter {
             const encryptedBase64 = encrypted.ciphertext.toString(CryptoJS.enc.Base64);
             bufferToUpload = Buffer.from(encryptedBase64, 'base64');
             (bufferToUpload as any).name = file.name;
-            
+
             const keyBase64Url = key.toString(CryptoJS.enc.Base64).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
             const ivBase64 = iv.toString(CryptoJS.enc.Base64).replace(/=+$/, '');
             const sha256Hash = CryptoJS.SHA256(encrypted.ciphertext).toString(CryptoJS.enc.Base64).replace(/=+$/, '');
@@ -437,8 +505,8 @@ class MatrixService extends EventEmitter {
         const content: any = {
             body: file.name || "Attachment",
             msgtype: msgtype,
-            info: { 
-                mimetype: file.type, 
+            info: {
+                mimetype: file.type,
                 size: file.size,
                 ...file.info
             }
@@ -455,7 +523,7 @@ class MatrixService extends EventEmitter {
         if (msgtype === 'm.audio') {
             content["org.matrix.msc3245.voice"] = {};
             content["org.matrix.msc1767.text"] = file.name || "Voice message";
-            
+
             const msc1767File: any = {
                 name: file.name,
                 mimetype: file.type,
@@ -536,7 +604,7 @@ class MatrixService extends EventEmitter {
     async rejectInvite(roomId: string) { return await this.client?.leave(roomId); }
     async leaveRoom(roomId: string) { return await this.client?.leave(roomId); }
     async kickUser(roomId: string, userId: string, reason?: string) { return await this.client?.kick(roomId, userId, reason); }
-    
+
     async setPowerLevel(roomId: string, userId: string, powerLevel: number) {
         if (!this.client) return;
         const room = this.client.getRoom(roomId);
@@ -552,7 +620,7 @@ class MatrixService extends EventEmitter {
         if (!this.client) return;
         return await this.client.sendStateEvent(roomId, "m.room.avatar", { url: mxcUrl });
     }
-    
+
     async setRoomName(roomId: string, name: string) {
         if (!this.client) return;
         return await this.client.setRoomName(roomId, name);
@@ -586,7 +654,7 @@ class MatrixService extends EventEmitter {
             const crypto = this.client.getCrypto();
             const generatedKey = await crypto.createRecoveryKeyFromPassphrase(password);
             if (!generatedKey) throw new Error("Could not create recovery key.");
-            
+
             this.tempKey = generatedKey.privateKey;
             await crypto.bootstrapSecretStorage({
                 createSecretStorageKey: async () => generatedKey,
@@ -597,11 +665,11 @@ class MatrixService extends EventEmitter {
 
             const defaultKeyId = await this._getSecretStorageDefaultKeyId();
             if (defaultKeyId) this.secretKeys.set(defaultKeyId, generatedKey.privateKey);
-            
+
             this.tempKey = null;
             const version = await crypto.getActiveSessionBackupVersion();
             if (version) await crypto.enableKeyBackup(version);
-            
+
             return generatedKey.encodedPrivateKey;
         } catch (e) {
             this.tempKey = null;
@@ -644,7 +712,7 @@ class MatrixService extends EventEmitter {
                     });
                 }
             });
-            
+
             await crypto.checkKeyBackupAndEnable();
             this.tempKey = null;
             return true;
@@ -702,7 +770,7 @@ export async function decryptMatrixFile(file: any) {
         if (client.getAccessToken()) {
             headers['Authorization'] = `Bearer ${client.getAccessToken()}`;
         }
-        
+
         // Dùng expo-file-system để download file mã hóa về máy
         const tempUri = FileSystem.cacheDirectory + 'enc_' + Date.now();
         const downloadResult = await FileSystem.downloadAsync(httpUrl, tempUri, { headers });
@@ -712,7 +780,7 @@ export async function decryptMatrixFile(file: any) {
 
         // Đọc file mã hóa dưới dạng Base64
         const encryptedBase64 = await FileSystem.readAsStringAsync(downloadResult.uri, { encoding: FileSystem.EncodingType.Base64 });
-        
+
         // Chuẩn bị khóa giải mã (Chuyển Base64URL sang Base64 chuẩn)
         const keyBase64 = file.key.k.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - (file.key.k.length % 4)) % 4);
         const ivBase64 = file.iv.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - (file.iv.length % 4)) % 4);
@@ -732,9 +800,9 @@ export async function decryptMatrixFile(file: any) {
 
         // Trả về chuỗi Base64 của tệp tin đã được giải mã
         const decryptedBase64 = CryptoJS.enc.Base64.stringify(decrypted);
-        
+
         // Xóa file tạm
-        FileSystem.deleteAsync(tempUri).catch(() => {});
+        FileSystem.deleteAsync(tempUri).catch(() => { });
 
         return decryptedBase64;
     } catch (e: any) {
