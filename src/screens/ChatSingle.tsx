@@ -30,6 +30,10 @@ const MatrixImage = ({ url, client, info: fileInfo, eventId, mxcUrl }: { url: st
 
     const loadImg = async () => {
       try {
+        if (url.startsWith('file://')) {
+          if (isMounted) setLocalUri(url);
+          return;
+        }
         const cacheKey = mxcUrl || url;
         const safeId = cacheKey.replace(/[^a-zA-Z0-9]/g, '_');
         const fileUri = FileSystem.cacheDirectory + 'img_v3_' + safeId + '.jpg';
@@ -106,6 +110,10 @@ const MatrixVideo = ({ url, client, info: fileInfo, eventId, mxcUrl }: { url: st
 
     const loadVid = async () => {
       try {
+        if (url.startsWith('file://')) {
+          if (isMounted) setLocalUri(url);
+          return;
+        }
         const cacheKey = mxcUrl || url;
         const safeId = cacheKey.replace(/[^a-zA-Z0-9]/g, '_');
         const fileUri = FileSystem.cacheDirectory + 'vid_v3_' + safeId + '.mp4';
@@ -352,20 +360,43 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
           type: asset.mimeType || (isVideo ? 'video/mp4' : 'image/jpeg'),
           size: asset.fileSize
         };
-        matrixService.uploadFile(currentActiveRoomId!, file)
-          .then((response: any) => {
-            if (response && response.mxcUrl) {
-              const safeId = response.mxcUrl.replace(/[^a-zA-Z0-9]/g, '_');
-              const prefix = isVideo ? 'vid_v3_' : 'img_v3_';
-              const ext = isVideo ? '.mp4' : '.jpg';
-              const targetCacheUri = FileSystem.cacheDirectory + prefix + safeId + ext;
-              FileSystem.copyAsync({ from: asset.uri, to: targetCacheUri }).catch((copyErr) => {
-                console.warn("Lỗi pre-cache file (dùng mxcUrl):", copyErr);
-              });
-            }
-          }).catch(err => {
-            Alert.alert('Lỗi', 'Không thể gửi hình ảnh: ' + err.message);
-          });
+
+        const client = getMatrixClient();
+        const tempTxnId = 'txn_' + Date.now();
+        const date = new Date();
+        const currentTimeStr = date.getHours().toString().padStart(2, '0') + ':' + date.getMinutes().toString().padStart(2, '0');
+        
+        const fakeTempMessage = {
+          id: tempTxnId,
+          sender: client?.getUserId() || '',
+          isMe: true,
+          text: isVideo ? 'Video' : 'Hình ảnh',
+          time: currentTimeStr,
+          senderName: 'Tôi',
+          msgType: isVideo ? 'm.video' : 'm.image',
+          mediaUrl: file.uri,
+          status: 'sending'
+        };
+
+        setMessages(prev => [fakeTempMessage, ...prev]);
+        flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
+
+        setTimeout(() => {
+          matrixService.uploadFile(currentActiveRoomId!, file)
+            .then((response: any) => {
+              if (response && response.mxcUrl) {
+                const safeId = response.mxcUrl.replace(/[^a-zA-Z0-9]/g, '_');
+                const prefix = isVideo ? 'vid_v3_' : 'img_v3_';
+                const ext = isVideo ? '.mp4' : '.jpg';
+                const targetCacheUri = FileSystem.cacheDirectory + prefix + safeId + ext;
+                FileSystem.copyAsync({ from: asset.uri, to: targetCacheUri }).catch((copyErr) => {
+                  console.warn("Lỗi pre-cache file (dùng mxcUrl):", copyErr);
+                });
+              }
+            }).catch(err => {
+              Alert.alert('Lỗi', 'Không thể gửi hình ảnh: ' + err.message);
+            });
+        }, 0);
       }
     } catch (e) { console.error(e); }
     setShowAttachMenu(false);
@@ -382,9 +413,33 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
           type: asset.mimeType || 'application/octet-stream',
           size: asset.size
         };
-        matrixService.uploadFile(currentActiveRoomId!, file).catch(err => {
-          Alert.alert('Lỗi', 'Không thể gửi tài liệu: ' + err.message);
-        });
+
+        const client = getMatrixClient();
+        const tempTxnId = 'txn_' + Date.now();
+        const date = new Date();
+        const currentTimeStr = date.getHours().toString().padStart(2, '0') + ':' + date.getMinutes().toString().padStart(2, '0');
+        
+        const fakeTempMessage = {
+          id: tempTxnId,
+          sender: client?.getUserId() || '',
+          isMe: true,
+          text: file.name,
+          fileName: file.name,
+          time: currentTimeStr,
+          senderName: 'Tôi',
+          msgType: 'm.file',
+          mediaUrl: file.uri,
+          status: 'sending'
+        };
+
+        setMessages(prev => [fakeTempMessage, ...prev]);
+        flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
+
+        setTimeout(() => {
+          matrixService.uploadFile(currentActiveRoomId!, file).catch(err => {
+            Alert.alert('Lỗi', 'Không thể gửi tài liệu: ' + err.message);
+          });
+        }, 0);
       }
     } catch (e) { console.error(e); }
     setShowAttachMenu(false);
@@ -425,16 +480,40 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
             duration: finalDurationMs
           }
         };
-        matrixService.uploadFile(currentActiveRoomId, file).then((response: any) => {
-          if (response && response.mxcUrl) {
-            const safeId = response.mxcUrl.replace(/[^a-zA-Z0-9]/g, '_');
-            const targetCacheUri = FileSystem.cacheDirectory + 'audio_v3_' + safeId + '.m4a';
-            FileSystem.copyAsync({ from: uri, to: targetCacheUri }).catch(() => { });
-          }
-        })
+
+        const client = getMatrixClient();
+        const tempTxnId = 'txn_' + Date.now();
+        const date = new Date();
+        const currentTimeStr = date.getHours().toString().padStart(2, '0') + ':' + date.getMinutes().toString().padStart(2, '0');
+        
+        const fakeTempMessage = {
+          id: tempTxnId,
+          sender: client?.getUserId() || '',
+          isMe: true,
+          text: 'Tin nhắn thoại',
+          time: currentTimeStr,
+          senderName: 'Tôi',
+          msgType: 'm.audio',
+          mediaUrl: uri,
+          status: 'sending',
+          info: file.info
+        };
+
+        setMessages(prev => [fakeTempMessage, ...prev]);
+        flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
+
+        setTimeout(() => {
+          matrixService.uploadFile(currentActiveRoomId, file).then((response: any) => {
+            if (response && response.mxcUrl) {
+              const safeId = response.mxcUrl.replace(/[^a-zA-Z0-9]/g, '_');
+              const targetCacheUri = FileSystem.cacheDirectory + 'audio_v3_' + safeId + '.m4a';
+              FileSystem.copyAsync({ from: uri, to: targetCacheUri }).catch(() => { });
+            }
+          })
           .catch(err => {
             Alert.alert('Lỗi', 'Không thể gửi ghi âm: ' + err.message);
           });
+        }, 0);
       }
     } catch (err) {
       console.error('Failed to stop recording', err);
