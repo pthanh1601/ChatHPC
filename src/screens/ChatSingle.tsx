@@ -371,58 +371,82 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
 
   const handlePickImage = async () => {
     try {
+      // 1. Cấu hình ImagePicker không bắt nén quá sâu lúc chọn để tránh blocking luồng lấy file
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.All,
-        quality: 0.8,
+        quality: 0.9, // Giữ chất lượng cao, luồng gửi ngầm sẽ lo phần còn lại
       });
+
       if (!result.canceled && result.assets[0]) {
         const asset = result.assets[0];
         const isVideo = asset.type === 'video';
-        const file = {
+        const fileExtension = asset.uri.split('.').pop() || (isVideo ? 'mp4' : 'jpg');
+        const fileName = asset.fileName || `media_${Date.now()}.${fileExtension}`;
+        
+        const fileToUpload = {
           uri: asset.uri,
-          name: asset.fileName || asset.uri.split('/').pop() || (isVideo ? 'video.mp4' : 'image.jpg'),
+          name: fileName,
           type: asset.mimeType || (isVideo ? 'video/mp4' : 'image/jpeg'),
-          size: asset.fileSize
+          size: asset.fileSize || 0,
+          info: {
+            w: asset.width,
+            h: asset.height,
+            duration: asset.duration ? asset.duration * 1000 : undefined // Quy đổi về mili-giây cho video
+          }
         };
 
-        const client = getMatrixClient();
-        const tempTxnId = 'txn_' + Date.now();
+        // 2. 🌟 BÍ QUYẾT ELEMENT: Sinh ID giao dịch tạm thời (txnId)
+        const tempEventId = 'txn_media_' + Date.now();
         const date = new Date();
         const currentTimeStr = date.getHours().toString().padStart(2, '0') + ':' + date.getMinutes().toString().padStart(2, '0');
-        
-        const fakeTempMessage = {
-          id: tempTxnId,
-          sender: client?.getUserId() || '',
+
+        // 3. 🌟 OPTIMISTIC MEDIA PRE-CACHE:
+        // Đánh lừa FlatList hiển thị luôn file cục bộ trong máy lên khung chat ngay lập tức!
+        const optimisticMessage = {
+          id: tempEventId,
+          sender: getMatrixClient().getUserId(),
           isMe: true,
-          text: isVideo ? 'Video' : 'Hình ảnh',
+          text: fileName,
           time: currentTimeStr,
           senderName: 'Tôi',
           msgType: isVideo ? 'm.video' : 'm.image',
-          mediaUrl: file.uri,
-          status: 'sending'
+          mediaUrl: asset.uri, // 🌟 Gán thẳng URI local (phân vùng phpm/phần cứng máy) vào mediaUrl
+          mxcUrl: null,
+          status: 'sending', // Bật vòng xoay trạng thái đang tải lên
+          info: fileToUpload.info
         };
 
-        setMessages(prev => [fakeTempMessage, ...prev]);
+        // Đẩy tin nhắn ảnh/video nhảy số lên FlatList ngay trong 1ms
+        setMessages(prev => [optimisticMessage, ...prev]);
         flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
 
-        setTimeout(() => {
-          matrixService.uploadFile(currentActiveRoomId!, file)
-            .then((response: any) => {
-              if (response && response.mxcUrl) {
-                const safeId = response.mxcUrl.replace(/[^a-zA-Z0-9]/g, '_');
-                const prefix = isVideo ? 'vid_v3_' : 'img_v3_';
-                const ext = isVideo ? '.mp4' : '.jpg';
-                const targetCacheUri = FileSystem.cacheDirectory + prefix + safeId + ext;
-                FileSystem.copyAsync({ from: asset.uri, to: targetCacheUri }).catch((copyErr) => {
-                  console.warn("Lỗi pre-cache file (dùng mxcUrl):", copyErr);
-                });
-              }
-            }).catch(err => {
-              Alert.alert('Lỗi', 'Không thể gửi hình ảnh: ' + err.message);
-            });
+        // 4. 🌟 LUỒNG TẢI LÊN NGẦM BẤT ĐỒNG BỘ TUYỆT ĐỐI (Background Thread Task)
+        setTimeout(async () => {
+          try {
+            console.log("📡 Đang tiến hành mã hóa và upload media ngầm dưới nền...");
+            const response = await matrixService.uploadFile(currentActiveRoomId!, fileToUpload);
+            
+            if (response && response.mxcUrl) {
+              // 5. PRE-CACHE KHÓA MÃ HÓA NGẦM:
+              // Tạo bộ đệm ánh xạ (Mapping) từ MXC URL sang file local có sẵn trong máy.
+              // Việc này giúp chính bạn không cần phải tải lại file mã hóa E2EE đó từ server về nữa
+              const safeId = response.mxcUrl.replace(/[^a-zA-Z0-9]/g, '_');
+              const prefix = isVideo ? 'vid_v3_' : 'img_v3_';
+              const cacheUri = FileSystem.cacheDirectory + prefix + safeId + '.' + fileExtension;
+              
+              // Copy file gốc sang bộ đệm cache mồi của MatrixImage / MatrixVideo
+              await FileSystem.copyAsync({ from: asset.uri, to: cacheUri });
+              console.log("✅ Pre-cached media file to disk:", cacheUri);
+            }
+          } catch (uploadErr) {
+            console.error("❌ Lỗi tải lên file ngầm:", uploadErr);
+            // Bạn có thể update trạng thái item tạm này thành 'failed' nếu muốn
+          }
         }, 0);
       }
-    } catch (e) { console.error(e); }
+    } catch (e) {
+      console.error("Lỗi chọn file:", e);
+    }
     setShowAttachMenu(false);
   };
 

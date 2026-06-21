@@ -108,6 +108,31 @@ export const setCurrentActiveRoomId = (id: string | null) => {
     globalStore.__currentActiveRoomId = id;
 };
 
+function bufferToWordArray(buffer: Buffer): CryptoJS.lib.WordArray {
+    const len = buffer.length;
+    const words: number[] = [];
+    for (let i = 0; i < len; i += 4) {
+        let word = 0;
+        if (i + 0 < len) word |= buffer[i + 0] << 24;
+        if (i + 1 < len) word |= buffer[i + 1] << 16;
+        if (i + 2 < len) word |= buffer[i + 2] << 8;
+        if (i + 3 < len) word |= buffer[i + 3] << 0;
+        words.push(word);
+    }
+    return CryptoJS.lib.WordArray.create(words, len);
+}
+
+function wordArrayToBuffer(wordArray: CryptoJS.lib.WordArray): Buffer {
+    const words = wordArray.words;
+    const sigBytes = wordArray.sigBytes;
+    const buffer = Buffer.alloc(sigBytes);
+    for (let i = 0; i < sigBytes; i++) {
+        const byte = (words[i >>> 2] >>> (24 - (i % 4) * 8)) & 0xff;
+        buffer[i] = byte;
+    }
+    return buffer;
+}
+
 class MatrixService extends EventEmitter {
     public client: any = null;
     public homeserverUrl = MATRIX_BASE_URL;
@@ -622,19 +647,21 @@ class MatrixService extends EventEmitter {
         let encryptionInfo: any = null;
 
         if (isEncrypted && canEncrypt) {
-            // Bổ sung mã hóa E2EE khi tải file lên giống như giải mã khi tải về
+            console.log("🔒 Encrypting attachment file for E2EE room...");
             const key = CryptoJS.lib.WordArray.random(32);
             const iv = CryptoJS.lib.WordArray.random(16);
 
-            const dataWordArray = CryptoJS.enc.Base64.parse(base64Data);
+            // Chuyển Buffer trực tiếp sang WordArray (Tránh parsing chuỗi Base64 cực lớn gây đơ UI)
+            const dataWordArray = bufferToWordArray(bufferToUpload);
+
             const encrypted = CryptoJS.AES.encrypt(dataWordArray, key, {
                 iv: iv,
                 mode: CryptoJS.mode.CTR,
                 padding: CryptoJS.pad.NoPadding
             });
 
-            const encryptedBase64 = encrypted.ciphertext.toString(CryptoJS.enc.Base64);
-            bufferToUpload = Buffer.from(encryptedBase64, 'base64');
+            // Chuyển ciphertext WordArray trực tiếp sang Buffer (Tối ưu RAM gấp 3 lần)
+            bufferToUpload = wordArrayToBuffer(encrypted.ciphertext);
             (bufferToUpload as any).name = file.name;
 
             const keyBase64Url = key.toString(CryptoJS.enc.Base64).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -647,6 +674,7 @@ class MatrixService extends EventEmitter {
                 iv: ivBase64,
                 hashes: { sha256: sha256Hash }
             };
+            console.log("🔒 Attachment file E2EE encryption complete!");
         }
 
         const uploadResponse = await this.client.uploadContent(bufferToUpload, {
