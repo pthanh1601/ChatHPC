@@ -152,6 +152,55 @@ class MatrixService extends EventEmitter {
             baseUrl: this.homeserverUrl
         };
 
+        // Dọn dẹp thiết bị cũ để tránh Key Sharing lag và rate-limiting
+        try {
+            console.log("🧹 Fetching user devices for stale session cleanup...");
+            const devicesResponse = await tempClient.getDevices();
+            const deviceList = devicesResponse.devices || [];
+            console.log(`Found ${deviceList.length} total devices for user ${username}.`);
+
+            // Chỉ dọn dẹp nếu tổng số thiết bị lớn hơn 5
+            if (deviceList.length > 5) {
+                // Sắp xếp theo last_seen_ts giảm dần (mới nhất lên đầu)
+                const sortedDevices = [...deviceList].sort((a: any, b: any) => {
+                    const tsA = a.last_seen_ts || 0;
+                    const tsB = b.last_seen_ts || 0;
+                    return tsB - tsA;
+                });
+
+                // Giữ lại thiết bị hiện tại và 2 thiết bị hoạt động gần đây nhất
+                const keepDeviceIds = new Set<string>();
+                keepDeviceIds.add(response.device_id);
+
+                let addedCount = 0;
+                for (const d of sortedDevices) {
+                    if (d.device_id !== response.device_id && addedCount < 2) {
+                        keepDeviceIds.add(d.device_id);
+                        addedCount++;
+                    }
+                }
+
+                const devicesToDelete = deviceList
+                    .map((d: any) => d.device_id)
+                    .filter((id: string) => !keepDeviceIds.has(id));
+
+                if (devicesToDelete.length > 0) {
+                    console.log(`🧹 Deleting ${devicesToDelete.length} stale devices...`);
+                    await tempClient.deleteMultipleDevices(devicesToDelete, {
+                        type: 'm.login.password',
+                        identifier: {
+                            type: 'm.id.user',
+                            user: response.user_id
+                        },
+                        password: password
+                    });
+                    console.log("✅ Stale devices cleaned up successfully!");
+                }
+            }
+        } catch (cleanupError: any) {
+            console.warn("⚠️ Failed to clean up stale devices during login:", cleanupError.message || cleanupError);
+        }
+
         await AsyncStorage.setItem('matrix_session', JSON.stringify(authData));
         return await this.startSession(authData);
     }
@@ -257,6 +306,13 @@ class MatrixService extends EventEmitter {
             cryptoCallbacks: cryptoCallbacks as any,
         });
 
+        // Lắng nghe sự kiện token hết hạn/hủy để tự động đăng xuất
+        this.client.on("Session.logged_out", async () => {
+            console.warn("⚠️ Access token is invalid/revoked, logging out...");
+            await this.clearCache();
+            this.emit('session.logged_out');
+        });
+
         globalStore.__matrixClient = this.client;
 
         try {
@@ -267,7 +323,8 @@ class MatrixService extends EventEmitter {
                     const cleanInput = savedRecoveryKey.trim().replace(/\s/g, '');
                     let privateKeyUint8: Uint8Array | string | null = null;
                     try {
-                        const { decodeRecoveryKey } = require('matrix-js-sdk/lib/crypto/recoverykey');
+                        // 🌟 Dùng import động bất đồng bộ chuẩn api để không bị lỗi phân tích cú pháp tĩnh trên Hermes
+                        const { decodeRecoveryKey } = await import('matrix-js-sdk/lib/crypto-api/recovery-key');
                         privateKeyUint8 = decodeRecoveryKey(cleanInput);
                     } catch {
                         privateKeyUint8 = cleanInput;
@@ -303,9 +360,9 @@ class MatrixService extends EventEmitter {
             console.log("✅ Crypto Initialized!");
         } catch (e: any) {
             console.error("❌ Crypto Failed:", e);
-            if (e.message?.includes("account in the store doesn't match") || e.message?.includes("DecryptionError")) {
+            if (e.message?.includes("account in the store doesn't match") || e.message?.includes("DecryptionError") || e.message?.includes("token")) {
                 await this.clearCache();
-                console.warn("Phiên bản mã hóa cũ bị lỗi. Yêu cầu đăng nhập lại.");
+                this.emit('session.logged_out');
                 return;
             }
         }
@@ -389,7 +446,10 @@ class MatrixService extends EventEmitter {
             }
         });
 
-        await this.client.startClient({ initialSyncLimit: 20 });
+        await this.client.startClient({
+            initialSyncLimit: 20,
+            lazyLoadMembers: true
+        });
 
         return this.client;
     }
@@ -788,7 +848,7 @@ class MatrixService extends EventEmitter {
 
             if (isRecoveryKey) {
                 try {
-                    const { decodeRecoveryKey } = require('matrix-js-sdk/lib/crypto/recoverykey');
+                    const { decodeRecoveryKey } = await import('matrix-js-sdk/lib/crypto-api/recovery-key');
                     this.tempKey = decodeRecoveryKey(cleanInput);
                 } catch { this.tempKey = cleanInput; }
                 await SecureStore.setItemAsync('matrix_recovery_key', cleanInput);

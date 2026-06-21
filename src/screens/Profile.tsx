@@ -94,7 +94,13 @@ export function Profile({ setScreen }: { setScreen: (s: AppScreen) => void }) {
             </TouchableOpacity>
 
             {/* Logout */}
-            <TouchableOpacity className="w-full flex-row items-center justify-between p-4">
+            <TouchableOpacity 
+              onPress={async () => {
+                await matrixService.clearCache();
+                setScreen('login');
+              }}
+              className="w-full flex-row items-center justify-between p-4"
+            >
               <View className="flex-row items-center">
                 <View className="w-10 h-10 rounded-lg bg-red-500/10 flex items-center justify-center mr-4">
                   <LogOut size={20} color="#ef4444" />

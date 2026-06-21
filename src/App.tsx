@@ -144,6 +144,17 @@ export default function App() {
     checkSession();
   }, []);
 
+  // Lắng nghe sự kiện đăng xuất khi access token hết hạn hoặc bị thu hồi (401)
+  useEffect(() => {
+    const onSessionLoggedOut = () => {
+      handleSetScreen('login');
+    };
+    matrixService.on('session.logged_out', onSessionLoggedOut);
+    return () => {
+      matrixService.removeListener('session.logged_out', onSessionLoggedOut);
+    };
+  }, []);
+
   // Tích hợp thêm nút Back vật lý trên hệ điều hành Android
   useEffect(() => {
     const backAction = () => {
