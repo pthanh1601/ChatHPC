@@ -42,7 +42,7 @@ const getDisplayDimensions = (originalWidth?: number, originalHeight?: number) =
   }
 };
 
-const MatrixImage = ({ url, client, info: fileInfo, eventId, mxcUrl }: { url: string, client: any, info: any, eventId: string, mxcUrl?: string | null }) => {
+const MatrixImage = ({ url, client, info: fileInfo, eventId, mxcUrl, fileName }: { url: string, client: any, info: any, eventId: string, mxcUrl?: string | null, fileName?: string }) => {
   const [localUri, setLocalUri] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const { width: displayWidth, height: displayHeight } = getDisplayDimensions(fileInfo?.w, fileInfo?.h);
@@ -59,8 +59,50 @@ const MatrixImage = ({ url, client, info: fileInfo, eventId, mxcUrl }: { url: st
         }
         const cacheKey = mxcUrl || url;
         const safeId = cacheKey.replace(/[^a-zA-Z0-9]/g, '_');
-        const fileUri = FileSystem.cacheDirectory + 'img_v3_' + safeId + '.jpg';
-        const fileExists = await FileSystem.getInfoAsync(fileUri);
+        
+        let ext = 'jpg';
+        if (fileName) {
+          const parts = fileName.split('.');
+          if (parts.length > 1) {
+            ext = parts.pop()!.toLowerCase();
+          }
+        } else if (fileInfo?.mimetype) {
+          const mimeExt = fileInfo.mimetype.split('/').pop()?.toLowerCase();
+          if (mimeExt === 'jpeg') ext = 'jpg';
+          else if (mimeExt) ext = mimeExt;
+        }
+
+        // Kiểm tra cache với extension chính xác
+        let fileUri = FileSystem.cacheDirectory + 'img_v3_' + safeId + '.' + ext;
+        let fileExists = await FileSystem.getInfoAsync(fileUri);
+
+        // Fallback kiểm tra các extension phổ biến khác nếu không thấy (.jpg, .jpeg, .png, .heic, .heif)
+        if (!fileExists.exists) {
+          const candidates = ['jpg', 'jpeg', 'png', 'heic', 'heif'].filter(c => c !== ext);
+          for (const cExt of candidates) {
+            const altUri = FileSystem.cacheDirectory + 'img_v3_' + safeId + '.' + cExt;
+            const altExists = await FileSystem.getInfoAsync(altUri);
+            if (altExists.exists) {
+              fileUri = altUri;
+              fileExists = altExists;
+              break;
+            }
+          }
+        }
+
+        // Fallback kiểm tra thêm đuôi viết hoa
+        if (!fileExists.exists) {
+          const candidatesUpper = ['jpg', 'jpeg', 'png', 'heic', 'heif'].map(c => c.toUpperCase());
+          for (const cExt of candidatesUpper) {
+            const altUri = FileSystem.cacheDirectory + 'img_v3_' + safeId + '.' + cExt;
+            const altExists = await FileSystem.getInfoAsync(altUri);
+            if (altExists.exists) {
+              fileUri = altUri;
+              fileExists = altExists;
+              break;
+            }
+          }
+        }
 
         if (fileExists.exists) {
           if (isMounted) setLocalUri(fileUri);
@@ -69,10 +111,7 @@ const MatrixImage = ({ url, client, info: fileInfo, eventId, mxcUrl }: { url: st
 
         if (fileInfo?.encryptedFileInfo) {
           try {
-            const base64Data = await decryptMatrixFile(fileInfo.encryptedFileInfo);
-            await FileSystem.writeAsStringAsync(fileUri, base64Data, {
-              encoding: FileSystem.EncodingType.Base64,
-            });
+            await decryptMatrixFile(fileInfo.encryptedFileInfo, fileUri);
             if (isMounted) setLocalUri(fileUri);
           } catch (decryptError: any) {
             console.error("Lỗi giải mã hình ảnh:", decryptError);
@@ -101,7 +140,7 @@ const MatrixImage = ({ url, client, info: fileInfo, eventId, mxcUrl }: { url: st
     return () => {
       isMounted = false;
     };
-  }, [url, eventId, fileInfo, mxcUrl]);
+  }, [url, eventId, fileInfo, mxcUrl, fileName]);
 
   if (error) {
     return (
@@ -122,7 +161,7 @@ const MatrixImage = ({ url, client, info: fileInfo, eventId, mxcUrl }: { url: st
   return <Image source={{ uri: localUri }} style={{ width: displayWidth, height: displayHeight, resizeMode: 'contain' }} className="rounded-lg" />;
 };
 
-const MatrixVideo = ({ url, client, info: fileInfo, eventId, mxcUrl }: { url: string, client: any, info: any, eventId: string, mxcUrl?: string | null }) => {
+const MatrixVideo = ({ url, client, info: fileInfo, eventId, mxcUrl, fileName }: { url: string, client: any, info: any, eventId: string, mxcUrl?: string | null, fileName?: string }) => {
   const [localUri, setLocalUri] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const videoRef = useRef<ExpoVideo>(null);
@@ -140,8 +179,47 @@ const MatrixVideo = ({ url, client, info: fileInfo, eventId, mxcUrl }: { url: st
         }
         const cacheKey = mxcUrl || url;
         const safeId = cacheKey.replace(/[^a-zA-Z0-9]/g, '_');
-        const fileUri = FileSystem.cacheDirectory + 'vid_v3_' + safeId + '.mp4';
-        const fileExists = await FileSystem.getInfoAsync(fileUri);
+        
+        let ext = 'mp4';
+        if (fileName) {
+          const parts = fileName.split('.');
+          if (parts.length > 1) {
+            ext = parts.pop()!.toLowerCase();
+          }
+        } else if (fileInfo?.mimetype) {
+          const mimeExt = fileInfo.mimetype.split('/').pop()?.toLowerCase();
+          if (mimeExt === 'quicktime') ext = 'mov';
+          else if (mimeExt) ext = mimeExt;
+        }
+
+        // Kiểm tra cache với extension chính xác
+        let fileUri = FileSystem.cacheDirectory + 'vid_v3_' + safeId + '.' + ext;
+        let fileExists = await FileSystem.getInfoAsync(fileUri);
+
+        // Fallback kiểm tra các extension phổ biến khác nếu không thấy
+        if (!fileExists.exists) {
+          const altExt = ext === 'mp4' ? 'mov' : 'mp4';
+          const altUri = FileSystem.cacheDirectory + 'vid_v3_' + safeId + '.' + altExt;
+          const altExists = await FileSystem.getInfoAsync(altUri);
+          if (altExists.exists) {
+            fileUri = altUri;
+            fileExists = altExists;
+          }
+        }
+
+        // Fallback kiểm tra thêm đuôi viết hoa (.MOV, .MP4)
+        if (!fileExists.exists) {
+          const upperExts = [ext.toUpperCase(), (ext === 'mp4' ? 'mov' : 'mp4').toUpperCase()];
+          for (const uExt of upperExts) {
+            const upperUri = FileSystem.cacheDirectory + 'vid_v3_' + safeId + '.' + uExt;
+            const upperExists = await FileSystem.getInfoAsync(upperUri);
+            if (upperExists.exists) {
+              fileUri = upperUri;
+              fileExists = upperExists;
+              break;
+            }
+          }
+        }
 
         if (fileExists.exists) {
           if (isMounted) setLocalUri(fileUri);
@@ -150,10 +228,7 @@ const MatrixVideo = ({ url, client, info: fileInfo, eventId, mxcUrl }: { url: st
 
         if (fileInfo?.encryptedFileInfo) {
           try {
-            const base64Data = await decryptMatrixFile(fileInfo.encryptedFileInfo);
-            await FileSystem.writeAsStringAsync(fileUri, base64Data, {
-              encoding: FileSystem.EncodingType.Base64,
-            });
+            await decryptMatrixFile(fileInfo.encryptedFileInfo, fileUri);
             if (isMounted) setLocalUri(fileUri);
           } catch (decryptError: any) {
             console.error("Lỗi giải mã video:", decryptError);
@@ -179,7 +254,7 @@ const MatrixVideo = ({ url, client, info: fileInfo, eventId, mxcUrl }: { url: st
 
     loadVid();
     return () => { isMounted = false; };
-  }, [url, eventId, fileInfo, mxcUrl]);
+  }, [url, eventId, fileInfo, mxcUrl, fileName]);
 
   if (error) {
     return (
@@ -618,11 +693,7 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
         try {
           const encryptedFileInfo = msgItem.info.encryptedFileInfo;
 
-          const base64Data = await decryptMatrixFile(encryptedFileInfo);
-
-          await FileSystem.writeAsStringAsync(cacheUri, base64Data, {
-            encoding: FileSystem.EncodingType.Base64,
-          });
+          await decryptMatrixFile(encryptedFileInfo, cacheUri);
 
           playUrl = cacheUri;
         } catch (decryptError) {
@@ -901,7 +972,7 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
     if (msg.msgType === 'm.image' && msg.mediaUrl) {
       return (
         <View className="overflow-hidden rounded-lg">
-          <MatrixImage url={msg.mediaUrl} client={client} info={msg.info} eventId={msg.id} mxcUrl={msg.mxcUrl} />
+          <MatrixImage url={msg.mediaUrl} client={client} info={msg.info} eventId={msg.id} mxcUrl={msg.mxcUrl} fileName={msg.fileName} />
         </View>
       );
     }
@@ -929,7 +1000,7 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
     if (msg.msgType === 'm.video' && msg.mediaUrl) {
       return (
         <View className="overflow-hidden rounded-lg bg-black">
-          <MatrixVideo url={msg.mediaUrl} client={client} info={msg.info} eventId={msg.id} mxcUrl={msg.mxcUrl} />
+          <MatrixVideo url={msg.mediaUrl} client={client} info={msg.info} eventId={msg.id} mxcUrl={msg.mxcUrl} fileName={msg.fileName} />
         </View>
       );
     }

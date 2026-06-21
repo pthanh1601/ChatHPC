@@ -948,11 +948,13 @@ class MatrixService extends EventEmitter {
     }
 }
 
-export async function decryptMatrixFile(file: any) {
+export async function decryptMatrixFile(file: any, targetUri?: string) {
     const client = getMatrixClient();
     if (!client || !file || !file.url) {
         throw new Error("File info is missing.");
     }
+
+    const outputUri = targetUri || (FileSystem.cacheDirectory + 'dec_temp_' + Date.now());
 
     try {
         let httpUrl = client.mxcUrlToHttp(file.url);
@@ -964,42 +966,84 @@ export async function decryptMatrixFile(file: any) {
             headers['Authorization'] = `Bearer ${client.getAccessToken()}`;
         }
 
-        // Dùng expo-file-system để download file mã hóa về máy
         const tempUri = FileSystem.cacheDirectory + 'enc_' + Date.now();
         const downloadResult = await FileSystem.downloadAsync(httpUrl, tempUri, { headers });
         if (downloadResult.status !== 200) {
             throw new Error(`Failed to fetch encrypted file: HTTP ${downloadResult.status}`);
         }
 
-        // Đọc file mã hóa dưới dạng Base64
-        const encryptedBase64 = await FileSystem.readAsStringAsync(downloadResult.uri, { encoding: FileSystem.EncodingType.Base64 });
-
-        // Chuẩn bị khóa giải mã (Chuyển Base64URL sang Base64 chuẩn)
+        // 1. Chuẩn bị khóa giải mã (Base64URL sang Base64 chuẩn)
         const keyBase64 = file.key.k.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - (file.key.k.length % 4)) % 4);
         const ivBase64 = file.iv.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - (file.iv.length % 4)) % 4);
 
         const key = CryptoJS.enc.Base64.parse(keyBase64);
         const iv = CryptoJS.enc.Base64.parse(ivBase64);
-        const ciphertext = CryptoJS.enc.Base64.parse(encryptedBase64);
 
-        const cipherParams = CryptoJS.lib.CipherParams.create({ ciphertext: ciphertext });
-
-        // Giải mã bằng AES-CTR
-        const decrypted = CryptoJS.AES.decrypt(cipherParams, key, {
+        const decryptor = CryptoJS.algo.AES.createDecryptor(key, {
             iv: iv,
             mode: CryptoJS.mode.CTR,
             padding: CryptoJS.pad.NoPadding
         });
 
-        // Trả về chuỗi Base64 của tệp tin đã được giải mã
-        const decryptedBase64 = CryptoJS.enc.Base64.stringify(decrypted);
+        const fileInfo = await FileSystem.getInfoAsync(downloadResult.uri);
+        const fileSize = fileInfo.size || 0;
+        const chunkSize = 512 * 1024; // 🌟 Tăng lên 512KB mỗi chunk để xử lý luồng nhị phân Video nhanh hơn
+        let position = 0;
 
-        // Xóa file tạm
-        FileSystem.deleteAsync(tempUri).catch(() => { });
+        // Khởi tạo mảng WordArray tổng lực để gom các mảnh bytes sạch cục bộ
+        const accumulatedWords = CryptoJS.lib.WordArray.create();
 
-        return decryptedBase64;
+        while (position < fileSize) {
+            const length = Math.min(chunkSize, fileSize - position);
+            const chunkBase64 = await FileSystem.readAsStringAsync(downloadResult.uri, {
+                encoding: FileSystem.EncodingType.Base64,
+                position,
+                length
+            });
+
+            const ciphertextChunk = CryptoJS.enc.Base64.parse(chunkBase64);
+            const decryptedChunk = decryptor.process(ciphertextChunk);
+            
+            // 🌟 GIẢI PHÁP VÀNG: Gom luồng dữ liệu WordArray thô vào bộ nhớ đệm
+            if (decryptedChunk) {
+                accumulatedWords.concat(decryptedChunk);
+            }
+
+            position += length;
+            // Trả lại tiến trình giải phóng UI (Yielding) giúp gõ chữ và cuộn màn hình mượt mà
+            await new Promise<void>(resolve => setTimeout(resolve, 0));
+        }
+
+        const finalChunk = decryptor.finalize();
+        if (finalChunk && finalChunk.sigBytes > 0) {
+            accumulatedWords.concat(finalChunk);
+        }
+
+        // 🌟 CHUYỂN ĐỔI DUY NHẤT 1 LẦN: Convert mảng WordArray nguyên khối sạch sang Base64
+        // Việc này loại bỏ hoàn toàn lỗi gãy cấu trúc block nhị phân Mp4
+        const finalBase64Data = CryptoJS.enc.Base64.stringify(accumulatedWords);
+
+        // Clear tệp cũ nếu có trùng lặp
+        const checkOutput = await FileSystem.getInfoAsync(outputUri);
+        if (checkOutput.exists) {
+            await FileSystem.deleteAsync(outputUri, { idempotent: true });
+        }
+
+        // Ghi file sạch hoàn chỉnh ra ổ cứng máy
+        await FileSystem.writeAsStringAsync(outputUri, finalBase64Data, {
+            encoding: FileSystem.EncodingType.Base64
+        });
+
+        // Dọn dẹp tệp tạm download mã hóa để giải phóng dung lượng ổ cứng
+        await FileSystem.deleteAsync(downloadResult.uri, { idempotent: true }).catch(() => {});
+
+        if (targetUri) {
+            return targetUri;
+        } else {
+            return finalBase64Data;
+        }
     } catch (e: any) {
-        console.error("Error decrypting file:", e);
+        console.error("❌ Lỗi luồng giải mã nhận file media:", e);
         throw e;
     }
 }
