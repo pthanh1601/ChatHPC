@@ -20,9 +20,32 @@ const formatDurationStr = (seconds: number) => {
   return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 };
 
+const getDisplayDimensions = (originalWidth?: number, originalHeight?: number) => {
+  const maxW = 240;
+  const maxH = 240;
+  
+  if (!originalWidth || !originalHeight) {
+    return { width: 220, height: 220 };
+  }
+  
+  const aspectRatio = originalWidth / originalHeight;
+  if (aspectRatio > 1) {
+    // Landscape
+    const displayWidth = maxW;
+    const displayHeight = Math.round(maxW / aspectRatio);
+    return { width: displayWidth, height: displayHeight };
+  } else {
+    // Portrait or Square
+    const displayHeight = maxH;
+    const displayWidth = Math.round(maxH * aspectRatio);
+    return { width: displayWidth, height: displayHeight };
+  }
+};
+
 const MatrixImage = ({ url, client, info: fileInfo, eventId, mxcUrl }: { url: string, client: any, info: any, eventId: string, mxcUrl?: string | null }) => {
   const [localUri, setLocalUri] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const { width: displayWidth, height: displayHeight } = getDisplayDimensions(fileInfo?.w, fileInfo?.h);
 
   useEffect(() => {
     if (!url) return;
@@ -82,7 +105,7 @@ const MatrixImage = ({ url, client, info: fileInfo, eventId, mxcUrl }: { url: st
 
   if (error) {
     return (
-      <View className="w-[220px] h-[150px] bg-red-500/10 flex items-center justify-center rounded-lg border border-red-500/20 p-2">
+      <View style={{ width: displayWidth, height: displayHeight }} className="bg-red-500/10 flex items-center justify-center rounded-lg border border-red-500/20 p-2">
         <Text className="text-red-400 text-xs text-center">{error}</Text>
       </View>
     );
@@ -90,19 +113,20 @@ const MatrixImage = ({ url, client, info: fileInfo, eventId, mxcUrl }: { url: st
 
   if (!localUri) {
     return (
-      <View className="w-[220px] h-[220px] bg-white/5 flex items-center justify-center rounded-lg border border-white/10">
+      <View style={{ width: displayWidth, height: displayHeight }} className="bg-white/5 flex items-center justify-center rounded-lg border border-white/10">
         <ActivityIndicator color="#dcb8ff" />
       </View>
     );
   }
 
-  return <Image source={{ uri: localUri }} style={{ width: 220, height: 220, resizeMode: 'cover' }} className="rounded-lg" />;
+  return <Image source={{ uri: localUri }} style={{ width: displayWidth, height: displayHeight, resizeMode: 'contain' }} className="rounded-lg" />;
 };
 
 const MatrixVideo = ({ url, client, info: fileInfo, eventId, mxcUrl }: { url: string, client: any, info: any, eventId: string, mxcUrl?: string | null }) => {
   const [localUri, setLocalUri] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const videoRef = useRef<ExpoVideo>(null);
+  const { width: displayWidth, height: displayHeight } = getDisplayDimensions(fileInfo?.w, fileInfo?.h);
 
   useEffect(() => {
     if (!url) return;
@@ -159,7 +183,7 @@ const MatrixVideo = ({ url, client, info: fileInfo, eventId, mxcUrl }: { url: st
 
   if (error) {
     return (
-      <View className="w-[220px] h-[150px] bg-red-500/10 flex items-center justify-center rounded-lg border border-red-500/20 p-2">
+      <View style={{ width: displayWidth, height: displayHeight }} className="bg-red-500/10 flex items-center justify-center rounded-lg border border-red-500/20 p-2">
         <Text className="text-red-400 text-xs text-center">{error}</Text>
       </View>
     );
@@ -167,7 +191,7 @@ const MatrixVideo = ({ url, client, info: fileInfo, eventId, mxcUrl }: { url: st
 
   if (!localUri) {
     return (
-      <View className="w-[220px] h-[220px] bg-white/5 flex items-center justify-center rounded-lg border border-white/10">
+      <View style={{ width: displayWidth, height: displayHeight }} className="bg-white/5 flex items-center justify-center rounded-lg border border-white/10">
         <ActivityIndicator color="#dcb8ff" />
       </View>
     );
@@ -177,9 +201,9 @@ const MatrixVideo = ({ url, client, info: fileInfo, eventId, mxcUrl }: { url: st
     <ExpoVideo
       ref={videoRef}
       source={{ uri: localUri }}
-      style={{ width: 220, height: 220, borderRadius: 8 }}
+      style={{ width: displayWidth, height: displayHeight, borderRadius: 8 }}
       useNativeControls
-      resizeMode={ResizeMode.COVER}
+      resizeMode={ResizeMode.CONTAIN}
     />
   );
 };
@@ -969,9 +993,10 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
             ) : null
           )}
           renderItem={({ item: msg }) => {
+            const isMedia = msg.msgType === 'm.image' || msg.msgType === 'm.video';
             return msg.isMe ? (
               <View className="flex-col items-end max-w-[85%] self-end mb-4">
-                <View className="bg-bubble rounded-xl rounded-tr-none p-3 shadow-lg">
+                <View className={`${isMedia ? '' : 'bg-bubble p-3'} rounded-xl rounded-tr-none shadow-lg`}>
                   {renderMessageContent(msg)}
                 </View>
                 <View className="flex-row items-center gap-1 mt-1 mr-1">
@@ -986,7 +1011,7 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
             ) : (
               <View className="flex-col items-start max-w-[85%] mb-4">
                 <Text className="text-xs text-gray-400 mb-1 ml-1">{msg.senderName}</Text>
-                <View className="bg-card rounded-xl rounded-tl-none p-3 shadow-sm border border-white/5">
+                <View className={`${isMedia ? '' : 'bg-card p-3 border border-white/5'} rounded-xl rounded-tl-none shadow-sm`}>
                   {renderMessageContent(msg)}
                 </View>
                 <Text className="text-[10px] mt-1 text-gray-500 ml-1">{msg.time}</Text>
