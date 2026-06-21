@@ -317,6 +317,7 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
   const flatListRef = useRef<FlatList>(null);
   const isHistoryLoadingRef = useRef(false);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastTypingSentRef = useRef<number>(0);
 
   const [showAttachMenu, setShowAttachMenu] = useState(false);
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
@@ -686,31 +687,47 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
     }
   };
 
+  // 🌟 1. SỬA LẠI HÀM HANDLEINPUTCHANGE (Chặn spam request typing)
   const handleInputChange = (text: string) => {
     setInputText(text);
 
+    // Nếu text truyền vào bằng rỗng (do hàm handleSend clear ô nhập liệu), BỎ QUA KHÔNG GỬI API
+    if (!text.trim()) return;
+
     const client = getMatrixClient();
     if (client && currentActiveRoomId) {
-      client.sendTyping(currentActiveRoomId, true, 5000);
+      const now = Date.now();
+      
+      // Chuẩn Element: Chỉ cho phép gọi API Typing lên server nếu lần gọi trước đó cách nhau trên 5 giây
+      if (now - lastTypingSentRef.current > 5000) {
+        lastTypingSentRef.current = now;
+        client.sendTyping(currentActiveRoomId, true, 6000); // Báo gõ phím mồi
+      }
+
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
       typingTimeoutRef.current = setTimeout(() => {
         client.sendTyping(currentActiveRoomId, false);
+        lastTypingSentRef.current = 0; // Reset mốc thời gian khi ngừng gõ
       }, 3000);
     }
   };
 
+  // 🌟 2. SỬA LẠI HÀM HANDLESEND
   const handleSend = () => {
     const client = getMatrixClient();
     if (!inputText.trim() || !client || !currentActiveRoomId) return;
 
     const textToSend = inputText.trim();
 
-    // 1. Tắt trạng thái gõ phím mồi
-    client.sendTyping(currentActiveRoomId, false);
+    // Tắt trạng thái gõ phím ngay lập tức lập tức để dọn đường cho tin nhắn đi
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    client.sendTyping(currentActiveRoomId, false);
+    lastTypingSentRef.current = 0; // Reset ref về 0 luôn
+
+    // Xóa chữ trong ô input
     setInputText('');
 
-    // 2. 🌟 BÍ QUYẾT MESENGER / ELEMENT: Cập nhật "lạc quan" lên giao diện trước
+    // Đẩy UI hiển thị "lạc quan" lên màn hình ngay trong 1ms
     const tempTxnId = 'txn_' + Date.now();
     const date = new Date();
     const currentTimeStr = date.getHours().toString().padStart(2, '0') + ':' + date.getMinutes().toString().padStart(2, '0');
@@ -729,7 +746,7 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
     setMessages(prev => [fakeTempMessage, ...prev]);
     flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
 
-    // 3. 🌟 ĐẨY LUỒNG MÃ HÓA NẶNG RA CHẠY NGẦM BẤT ĐỒNG BỘ
+    // Đẩy hàm gửi tin mã hóa chạy ngầm độc lập hoàn toàn, không dính líu đến render giao diện
     setTimeout(async () => {
       try {
         await matrixService.sendMessage(currentActiveRoomId, textToSend);
