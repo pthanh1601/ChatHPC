@@ -3,6 +3,7 @@ import { View, Text, Image, TouchableOpacity, ScrollView, Switch } from 'react-n
 import { Sparkles, Bell, Shield, Palette, LogOut, ChevronRight } from 'lucide-react-native';
 import { AppScreen, HERO_AVATAR } from '../data';
 import { Header } from '../components/Header';
+import { matrixService } from './matrix';
 
 export function Profile({ setScreen }: { setScreen: (s: AppScreen) => void }) {
   const [blurIntensity, setBlurIntensity] = useState(0);
@@ -11,8 +12,8 @@ export function Profile({ setScreen }: { setScreen: (s: AppScreen) => void }) {
     <View className="flex-1 bg-background">
       <Header title="Profile" blurIntensity={blurIntensity} />
 
-      <ScrollView 
-        className="flex-1 px-5" 
+      <ScrollView
+        className="flex-1 px-5"
         contentContainerStyle={{ paddingTop: 120, paddingBottom: 120 }}
         onScroll={(e) => setBlurIntensity(Math.min(100, Math.max(0, e.nativeEvent.contentOffset.y)))}
         scrollEventThrottle={16}
@@ -47,7 +48,7 @@ export function Profile({ setScreen }: { setScreen: (s: AppScreen) => void }) {
         {/* Settings Menu */}
         <View className="space-y-4 relative z-10">
           <View className="bg-card rounded-2xl overflow-hidden border border-white/5">
-            
+
             {/* Glow Toggle */}
             <View className="flex-row items-center justify-between p-4 border-b border-white/5">
               <View className="flex-row items-center">

@@ -25,6 +25,81 @@ if (!globalStore.__matrixClient) {
 
 let matrixClient = globalStore.__matrixClient;
 
+// Import LocalStorageCryptoStore để lưu trữ khoá E2EE bền vững trên điện thoại
+const { LocalStorageCryptoStore } = require('matrix-js-sdk/lib/crypto/store/localStorage-crypto-store');
+
+class PersistentLocalStorage {
+    private cache: { [key: string]: string } = {};
+    private filePath: string = FileSystem.documentDirectory + 'matrix_localstorage.json';
+    private saveTimeout: NodeJS.Timeout | null = null;
+    public isInitialized: boolean = false; // Cờ đánh dấu trạng thái nạp file từ đĩa
+
+    async init() {
+        try {
+            const fileInfo = await FileSystem.getInfoAsync(this.filePath);
+            if (fileInfo.exists) {
+                const content = await FileSystem.readAsStringAsync(this.filePath);
+                this.cache = JSON.parse(content);
+                console.log(`📁 Loaded ${Object.keys(this.cache).length} keys from PersistentLocalStorage`);
+            }
+        } catch (e) {
+            console.error("Failed to initialize PersistentLocalStorage:", e);
+            this.cache = {};
+        } finally {
+            this.isInitialized = true;
+        }
+    }
+
+    getItem(key: string): string | null {
+        return this.cache[key] !== undefined ? this.cache[key] : null;
+    }
+
+    setItem(key: string, value: string): void {
+        this.cache[key] = String(value);
+        this.save();
+    }
+
+    removeItem(key: string): void {
+        delete this.cache[key];
+        this.save();
+    }
+
+    key(index: number): string | null {
+        const keys = Object.keys(this.cache);
+        return keys[index] !== undefined ? keys[index] : null;
+    }
+
+    get length(): number {
+        return Object.keys(this.cache).length;
+    }
+
+    private save() {
+        if (this.saveTimeout) {
+            clearTimeout(this.saveTimeout);
+        }
+        this.saveTimeout = setTimeout(async () => {
+            try {
+                await FileSystem.writeAsStringAsync(this.filePath, JSON.stringify(this.cache));
+            } catch (e) {
+                console.error("Failed to save PersistentLocalStorage:", e);
+            }
+        }, 100);
+    }
+
+    async clear() {
+        this.cache = {};
+        if (this.saveTimeout) {
+            clearTimeout(this.saveTimeout);
+        }
+        try {
+            await FileSystem.deleteAsync(this.filePath, { idempotent: true });
+            console.log("📁 Cleared PersistentLocalStorage file.");
+        } catch (e) { }
+    }
+}
+
+export const persistentLocalStorage = new PersistentLocalStorage();
+
 // Lưu trữ ID phòng chat đang active để màn hình ChatSingle có thể sử dụng
 export let currentActiveRoomId: string | null = globalStore.__currentActiveRoomId || null;
 
@@ -76,17 +151,6 @@ class MatrixService extends EventEmitter {
             deviceId: response.device_id,
             baseUrl: this.homeserverUrl
         };
-
-        setTimeout(() => {
-            Alert.alert(
-                "Access Token của bạn",
-                "Bấm Share để copy access_token này sang máy tính test Postman nhé!",
-                [
-                    { text: "Bỏ qua", style: "cancel" },
-                    { text: "Copy / Share", onPress: () => Share.share({ message: authData.accessToken }) }
-                ]
-            );
-        }, 1500);
 
         await AsyncStorage.setItem('matrix_session', JSON.stringify(authData));
         return await this.startSession(authData);
@@ -177,6 +241,11 @@ class MatrixService extends EventEmitter {
             dbName: "eclo-chat-sync-store"
         }) : new sdk.MemoryStore();
 
+        // 🟢 Đảm bảo nạp xong Cache từ đĩa lên RAM trước khi khởi tạo CryptoStore
+        if (!persistentLocalStorage.isInitialized) {
+            await persistentLocalStorage.init();
+        }
+
         this.client = sdk.createClient({
             baseUrl: authData.baseUrl,
             accessToken: authData.accessToken,
@@ -184,13 +253,33 @@ class MatrixService extends EventEmitter {
             deviceId: authData.deviceId,
             timelineSupport: true,
             sessionStore: store,
-            cryptoStore: new sdk.MemoryCryptoStore(), // Sử dụng bộ nhớ RAM để quản lý khóa (ổn định nhất trên Mobile)
+            cryptoStore: new LocalStorageCryptoStore(persistentLocalStorage), // Sử dụng LocalStorageCryptoStore lưu khóa bền vững vào đĩa
             cryptoCallbacks: cryptoCallbacks as any,
         });
 
         globalStore.__matrixClient = this.client;
 
         try {
+            // Tự động khôi phục khóa giải mã E2EE từ SecureStore nếu có
+            try {
+                const savedRecoveryKey = await SecureStore.getItemAsync('matrix_recovery_key');
+                if (savedRecoveryKey) {
+                    const cleanInput = savedRecoveryKey.trim().replace(/\s/g, '');
+                    let privateKeyUint8: Uint8Array | string | null = null;
+                    try {
+                        const { decodeRecoveryKey } = require('matrix-js-sdk/lib/crypto/recoverykey');
+                        privateKeyUint8 = decodeRecoveryKey(cleanInput);
+                    } catch {
+                        privateKeyUint8 = cleanInput;
+                    }
+                    if (privateKeyUint8) {
+                        this.tempKey = privateKeyUint8;
+                    }
+                }
+            } catch (secErr) {
+                console.warn("Could not load recovery key from SecureStore on startup:", secErr);
+            }
+
             // Khởi tạo Olm và hệ thống mã hóa Legacy (Chống crash khi Hot Reload)
             if (!globalStore.__olmInitialized) {
                 console.log("Khởi tạo Olm Legacy...");
@@ -203,6 +292,14 @@ class MatrixService extends EventEmitter {
             this.client.setGlobalErrorOnUnknownDevices(false);
 
             this.client.getSecretStorageKey = cryptoCallbacks.getSecretStorageKey;
+
+            // Đưa khóa giải mã vào secretKeys map sau khi crypto đã khởi tạo xong và defaultKeyId có sẵn
+            const defaultKeyId = await this._getSecretStorageDefaultKeyId();
+            if (defaultKeyId && this.tempKey) {
+                this.secretKeys.set(defaultKeyId, this.tempKey);
+                console.log("🔑 Restored default SSSS key:", defaultKeyId);
+            }
+
             console.log("✅ Crypto Initialized!");
         } catch (e: any) {
             console.error("❌ Crypto Failed:", e);
@@ -238,7 +335,7 @@ class MatrixService extends EventEmitter {
                         platform: currentPlatform,
                         topic: currentTopic,
                         format: 'event_id_only',
-                        
+
                         // 🌟 BỔ SUNG ĐOẠN ĐÁNH LỪA APPLE APNS GIỐNG HỆT CÁCH ELEMENT LÀM
                         default_payload: {
                             aps: {
@@ -303,6 +400,8 @@ class MatrixService extends EventEmitter {
             this.client = null;
         }
         await AsyncStorage.clear();
+        await SecureStore.deleteItemAsync('matrix_recovery_key').catch(() => { });
+        await persistentLocalStorage.clear().catch(() => { });
     }
 
     // === XỬ LÝ WEBRTC VOIP === //
@@ -670,6 +769,8 @@ class MatrixService extends EventEmitter {
             const version = await crypto.getActiveSessionBackupVersion();
             if (version) await crypto.enableKeyBackup(version);
 
+            await SecureStore.setItemAsync('matrix_recovery_key', generatedKey.encodedPrivateKey);
+
             return generatedKey.encodedPrivateKey;
         } catch (e) {
             this.tempKey = null;
@@ -687,12 +788,16 @@ class MatrixService extends EventEmitter {
 
             if (isRecoveryKey) {
                 try {
-                    const { decodeRecoveryKey } = await import('matrix-js-sdk/lib/crypto-api/recovery-key');
+                    const { decodeRecoveryKey } = require('matrix-js-sdk/lib/crypto/recoverykey');
                     this.tempKey = decodeRecoveryKey(cleanInput);
                 } catch { this.tempKey = cleanInput; }
+                await SecureStore.setItemAsync('matrix_recovery_key', cleanInput);
             } else {
                 const recoveryKey = await crypto.createRecoveryKeyFromPassphrase(cleanInput);
-                if (recoveryKey) this.tempKey = recoveryKey.privateKey;
+                if (recoveryKey) {
+                    this.tempKey = recoveryKey.privateKey;
+                    await SecureStore.setItemAsync('matrix_recovery_key', recoveryKey.encodedPrivateKey);
+                }
             }
 
             const defaultKeyId = await this._getSecretStorageDefaultKeyId();

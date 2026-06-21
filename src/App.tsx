@@ -3,10 +3,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 import { useState, useEffect, useRef } from 'react';
-import { View, PanResponder, LayoutAnimation, Platform, UIManager, BackHandler, Animated, Dimensions, TouchableOpacity, Text } from 'react-native';
+import { View, PanResponder, LayoutAnimation, Platform, UIManager, BackHandler, Animated, Dimensions, TouchableOpacity, Text, ActivityIndicator } from 'react-native';
 import { Phone, Video, Mic } from 'lucide-react-native';
 import { AppScreen } from './data';
-import { loginToMatrix, startMatrixSync, matrixService, setCurrentActiveRoomId } from './screens/matrix';
+import { loginToMatrix, startMatrixSync, matrixService, setCurrentActiveRoomId, restoreSession } from './screens/matrix';
 import { setupNotificationCategories, setupNotificationListeners } from './services/notifications';
 import { BottomNav } from './components/BottomNav';
 import { Login } from './screens/Login';
@@ -29,6 +29,8 @@ const { width } = Dimensions.get('window');
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState<AppScreen>('login');
   const [baseScreen, setBaseScreen] = useState<AppScreen>('chat_list');
+  const [delayedDetailScreen, setDelayedDetailScreen] = useState<AppScreen | null>(null);
+  const [isRestoring, setIsRestoring] = useState(true);
   const [activeCall, setActiveCall] = useState<any>(null);
   const [isCallMinimized, setIsCallMinimized] = useState(false);
   const [callDuration, setCallDuration] = useState(0);
@@ -45,11 +47,14 @@ export default function App() {
     const wasDetail = ['chat_single', 'chat_group', 'create_room'].includes(currentScreenRef.current);
 
     if (isDetail && !wasDetail) {
-      // Mở trang chi tiết: Render sẵn ngoài màn hình rồi kéo lò xo trượt vào (Cực mượt)
+      // Mở trang chi tiết: Bắt đầu animation TRƯỚC, mount component SAU để không bị đơ
       currentScreenRef.current = screen;
       setCurrentScreen(screen);
+      setDelayedDetailScreen(null); // Placeholder nhẹ trước
       slideAnim.setValue(width);
       Animated.spring(slideAnim, { toValue: 0, useNativeDriver: true, bounciness: 0, speed: 20 }).start();
+      // Mount component nặng sau 1 frame để animation đã bắt đầu chạy
+      requestAnimationFrame(() => setDelayedDetailScreen(screen));
     } else if (!isDetail && wasDetail) {
       // Đóng trang chi tiết: Trượt thẳng ra ngoài màn hình trước rồi mới unmount để thấy lớp nền bên dưới
       Animated.timing(slideAnim, { toValue: width, duration: 250, useNativeDriver: true }).start(() => {
@@ -120,6 +125,25 @@ export default function App() {
     })
   ).current;
 
+  useEffect(() => {
+    const checkSession = async () => {
+      try {
+        const restored = await restoreSession();
+        if (restored) {
+          handleSetScreen('chat_list');
+        } else {
+          handleSetScreen('login');
+        }
+      } catch (err) {
+        console.error("Error restoring session:", err);
+        handleSetScreen('login');
+      } finally {
+        setIsRestoring(false);
+      }
+    };
+    checkSession();
+  }, []);
+
   // Tích hợp thêm nút Back vật lý trên hệ điều hành Android
   useEffect(() => {
     const backAction = () => {
@@ -182,6 +206,20 @@ export default function App() {
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
+  if (isRestoring) {
+    return (
+      <View className="flex-1 bg-background justify-center items-center px-8">
+        <View className="items-center mb-8">
+          <View className="w-20 h-20 bg-primary/20 rounded-3xl flex items-center justify-center border border-primary/40 mb-6 shadow-xl">
+            <ActivityIndicator size="large" color="#dcb8ff" />
+          </View>
+          <Text className="text-4xl font-extrabold text-white tracking-widest uppercase">Luminous</Text>
+          <Text className="text-sm text-secondary/80 mt-2 font-medium tracking-widest uppercase">Restoring Session...</Text>
+        </View>
+      </View>
+    );
+  }
+
   const isDetailActive = ['chat_single', 'chat_group', 'create_room'].includes(currentScreen);
   const activeBaseScreen = isDetailActive ? baseScreen : currentScreen;
 
@@ -208,9 +246,14 @@ export default function App() {
           {...panResponder.panHandlers}
         >
           <SafeScreen>
-            {currentScreen === 'chat_single' && <ChatSingle setScreen={handleSetScreen} />}
-            {currentScreen === 'chat_group' && <ChatGroup setScreen={handleSetScreen} />}
-            {currentScreen === 'create_room' && <CreateRoom setScreen={handleSetScreen} />}
+            {delayedDetailScreen === 'chat_single' && <ChatSingle setScreen={handleSetScreen} />}
+            {delayedDetailScreen === 'chat_group' && <ChatGroup setScreen={handleSetScreen} />}
+            {delayedDetailScreen === 'create_room' && <CreateRoom setScreen={handleSetScreen} />}
+            {!delayedDetailScreen && (
+              <View className="flex-1 bg-background items-center justify-center">
+                <ActivityIndicator size="small" color="#dcb8ff" />
+              </View>
+            )}
           </SafeScreen>
         </Animated.View>
       )}

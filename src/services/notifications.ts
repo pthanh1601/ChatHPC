@@ -170,18 +170,6 @@ export async function registerForPushNotificationsAsync() {
       let rawToken = deviceToken.data;
       console.log('📱 Raw Token từ Expo:', rawToken);
 
-      // Mở Popup trên màn hình điện thoại để dễ dàng Copy token
-      setTimeout(() => {
-        Alert.alert(
-          "Push Token của bạn",
-          "Bấm Share để copy mã token này sang máy tính test Postman nhé!",
-          [
-            { text: "Bỏ qua", style: "cancel" },
-            { text: "Copy / Share", onPress: () => Share.share({ message: rawToken }) }
-          ]
-        );
-      }, 1500);
-
       if (Platform.OS === 'ios' && typeof rawToken === 'string') {
         // Kiểm tra nếu là chuỗi Hex (64 ký tự bao gồm chữ từ a-f và số)
         if (/^[0-9a-fA-F]{64}$/.test(rawToken)) {
@@ -189,10 +177,10 @@ export async function registerForPushNotificationsAsync() {
           const hexToBase64 = (hexString: string) => {
             const match = hexString.match(/\w{2}/g);
             if (!match) return hexString;
-            
+
             const byteArray = match.map((a) => parseInt(a, 16));
             const charString = String.fromCharCode.apply(null, byteArray);
-            
+
             // Dùng btoa nếu môi trường có sẵn, nếu không sẽ dùng Buffer fallback an toàn
             return typeof btoa !== 'undefined' ? btoa(charString) : Buffer.from(byteArray).toString('base64');
           };
