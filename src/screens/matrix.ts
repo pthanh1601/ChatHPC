@@ -639,34 +639,66 @@ class MatrixService extends EventEmitter {
         const isEncrypted = this.client.isRoomEncrypted(roomId);
         const canEncrypt = this.client.isCryptoEnabled();
 
-        // Đọc file an toàn trên React Native bằng FileSystem thay vì fetch().blob()
-        const base64Data = await FileSystem.readAsStringAsync(file.uri, { encoding: FileSystem.EncodingType.Base64 });
-        let bufferToUpload = Buffer.from(base64Data, 'base64');
-        (bufferToUpload as any).name = file.name;
-
         let encryptionInfo: any = null;
+        let uploadUri = file.uri;
+        let uploadMimeType = file.type;
 
         if (isEncrypted && canEncrypt) {
             console.log("🔒 Encrypting attachment file for E2EE room...");
+            const fileInfo = await FileSystem.getInfoAsync(file.uri);
+            const fileSize = fileInfo.size || 0;
+            const chunkSize = 512 * 1024; // 🌟 512KB chunks để tránh phình RAM và block UI
+            let position = 0;
+
             const key = CryptoJS.lib.WordArray.random(32);
             const iv = CryptoJS.lib.WordArray.random(16);
 
-            // Chuyển Buffer trực tiếp sang WordArray (Tránh parsing chuỗi Base64 cực lớn gây đơ UI)
-            const dataWordArray = bufferToWordArray(bufferToUpload);
-
-            const encrypted = CryptoJS.AES.encrypt(dataWordArray, key, {
+            const encryptor = CryptoJS.algo.AES.createEncryptor(key, {
                 iv: iv,
                 mode: CryptoJS.mode.CTR,
                 padding: CryptoJS.pad.NoPadding
             });
 
-            // Chuyển ciphertext WordArray trực tiếp sang Buffer (Tối ưu RAM gấp 3 lần)
-            bufferToUpload = wordArrayToBuffer(encrypted.ciphertext);
-            (bufferToUpload as any).name = file.name;
+            const accumulatedWords = CryptoJS.lib.WordArray.create();
+            const sha256Algo = CryptoJS.algo.SHA256.create();
+
+            // 🌟 Đọc và mã hoá từng phần nhỏ giống Element Classic để không dồn cục bộ lên RAM
+            while (position < fileSize) {
+                const length = Math.min(chunkSize, fileSize - position);
+                const chunkBase64 = await FileSystem.readAsStringAsync(file.uri, {
+                    encoding: FileSystem.EncodingType.Base64,
+                    position,
+                    length
+                });
+
+                const chunkWordArray = CryptoJS.enc.Base64.parse(chunkBase64);
+                const encryptedChunk = encryptor.process(chunkWordArray);
+
+                if (encryptedChunk && encryptedChunk.sigBytes > 0) {
+                    accumulatedWords.concat(encryptedChunk);
+                    sha256Algo.update(encryptedChunk);
+                }
+
+                position += length;
+                // Nhường luồng cho UI cập nhật, tránh treo máy khi mã hoá file lớn
+                await new Promise<void>(resolve => setTimeout(resolve, 0));
+            }
+
+            const finalChunk = encryptor.finalize();
+            if (finalChunk && finalChunk.sigBytes > 0) {
+                accumulatedWords.concat(finalChunk);
+                sha256Algo.update(finalChunk);
+            }
+
+            // Chỉ convert ra base64 duy nhất 1 lần ở cuối cùng để write ra ổ cứng
+            const encryptedBase64 = CryptoJS.enc.Base64.stringify(accumulatedWords);
+            uploadUri = FileSystem.cacheDirectory + 'enc_up_' + Date.now();
+            await FileSystem.writeAsStringAsync(uploadUri, encryptedBase64, { encoding: FileSystem.EncodingType.Base64 });
+            uploadMimeType = "application/octet-stream";
 
             const keyBase64Url = key.toString(CryptoJS.enc.Base64).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
             const ivBase64 = iv.toString(CryptoJS.enc.Base64).replace(/=+$/, '');
-            const sha256Hash = CryptoJS.SHA256(encrypted.ciphertext).toString(CryptoJS.enc.Base64).replace(/=+$/, '');
+            const sha256Hash = sha256Algo.finalize().toString(CryptoJS.enc.Base64).replace(/=+$/, '');
 
             encryptionInfo = {
                 v: "v2",
@@ -677,12 +709,31 @@ class MatrixService extends EventEmitter {
             console.log("🔒 Attachment file E2EE encryption complete!");
         }
 
-        const uploadResponse = await this.client.uploadContent(bufferToUpload, {
-            name: file.name,
-            type: (isEncrypted && canEncrypt) ? "application/octet-stream" : file.type,
-            rawResponse: false
+        // 🌟 SỬ DỤNG EXPO FILE SYSTEM ĐỂ UPLOAD TRỰC TIẾP TỪ URI 🌟
+        // Việc này ngăn chặn React Native Fetch biến đổi Buffer thành String [object Object] làm hỏng File
+        const uploadUrl = `${this.client.getHomeserverUrl()}/_matrix/media/v3/upload?filename=${encodeURIComponent(file.name)}`;
+        const uploadResponse = await FileSystem.uploadAsync(uploadUrl, uploadUri, {
+            httpMethod: 'POST',
+            uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+            headers: {
+                'Authorization': `Bearer ${this.client.getAccessToken()}`,
+                'Content-Type': uploadMimeType
+            }
         });
-        const content_uri = uploadResponse.content_uri || uploadResponse;
+
+        if (uploadResponse.status !== 200) {
+            if (isEncrypted && canEncrypt) {
+                await FileSystem.deleteAsync(uploadUri, { idempotent: true }).catch(() => {});
+            }
+            throw new Error(`Upload failed with status ${uploadResponse.status}`);
+        }
+
+        const responseBody = JSON.parse(uploadResponse.body);
+        const content_uri = responseBody.content_uri;
+
+        if (isEncrypted && canEncrypt) {
+            await FileSystem.deleteAsync(uploadUri, { idempotent: true }).catch(() => {});
+        }
 
         let msgtype = 'm.file';
         if (file.type?.startsWith('image/')) msgtype = 'm.image';
