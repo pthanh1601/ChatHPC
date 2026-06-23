@@ -449,9 +449,9 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
       // 1. Cấu hình ImagePicker không bắt nén quá sâu lúc chọn để tránh blocking luồng lấy file
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.All,
-        quality: 0.9, // Giữ chất lượng cao, luồng gửi ngầm sẽ lo phần còn lại
-        videoQuality: ImagePicker.UIImagePickerControllerQualityType.Medium,
-        videoExportPreset: ImagePicker.VideoExportPreset.H264_720p,
+        quality: 0.6, // Nén ảnh mạnh hơn
+        videoQuality: ImagePicker.UIImagePickerControllerQualityType.Low, // Bắt buộc nén video cực nhỏ để JS mã hoá nổi
+        videoExportPreset: ImagePicker.VideoExportPreset.H264_640x480,
       });
 
       if (!result.canceled && result.assets[0]) {

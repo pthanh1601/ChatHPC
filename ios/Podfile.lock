@@ -58,6 +58,7 @@ PODS:
   - hermes-engine/Pre-built (0.73.6)
   - JitsiWebRTC (118.0.0)
   - libevent (2.1.12)
+  - OpenSSL-Universal (3.6.2000)
   - RCT-Folly (2022.05.16.00):
     - boost
     - DoubleConversion
@@ -931,6 +932,12 @@ PODS:
     - React-debug
   - react-native-get-random-values (1.8.0):
     - React-Core
+  - react-native-quick-crypto (0.7.4):
+    - glog
+    - OpenSSL-Universal
+    - RCT-Folly (= 2022.05.16.00)
+    - React
+    - React-Core
   - react-native-webrtc (118.0.7):
     - JitsiWebRTC (~> 118.0.0)
     - React-Core
@@ -1158,6 +1165,7 @@ DEPENDENCIES:
   - React-logger (from `../node_modules/react-native/ReactCommon/logger`)
   - React-Mapbuffer (from `../node_modules/react-native/ReactCommon`)
   - react-native-get-random-values (from `../node_modules/react-native-get-random-values`)
+  - react-native-quick-crypto (from `../node_modules/react-native-quick-crypto`)
   - react-native-webrtc (from `../node_modules/react-native-webrtc`)
   - React-nativeconfig (from `../node_modules/react-native/ReactCommon`)
   - React-NativeModulesApple (from `../node_modules/react-native/ReactCommon/react/nativemodule/core/platform/ios`)
@@ -1189,6 +1197,7 @@ SPEC REPOS:
     - fmt
     - JitsiWebRTC
     - libevent
+    - OpenSSL-Universal
     - SocketRocket
 
 EXTERNAL SOURCES:
@@ -1283,6 +1292,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native/ReactCommon"
   react-native-get-random-values:
     :path: "../node_modules/react-native-get-random-values"
+  react-native-quick-crypto:
+    :path: "../node_modules/react-native-quick-crypto"
   react-native-webrtc:
     :path: "../node_modules/react-native-webrtc"
   React-nativeconfig:
@@ -1361,6 +1372,7 @@ SPEC CHECKSUMS:
   hermes-engine: 9cecf9953a681df7556b8cc9c74905de8f3293c0
   JitsiWebRTC: 3a41671ef65a51d7204323814b055a2690b921c7
   libevent: 4049cae6c81cdb3654a443be001fb9bdceff7913
+  OpenSSL-Universal: ecee7b138fa75a74ecf00d7ffd248fb584739b9e
   RCT-Folly: cd21f1661364f975ae76b3308167ad66b09f53f5
   RCTRequired: ca1d7414aba0b27efcfa2ccd37637edb1ab77d96
   RCTTypeSafety: 678e344fb976ff98343ca61dc62e151f3a042292
@@ -1383,6 +1395,7 @@ SPEC CHECKSUMS:
   React-logger: 55764cd993880c6f887505854581c9faf68feff2
   React-Mapbuffer: 15dfcfeb4428d8799cce75e7fe85b18b706029e0
   react-native-get-random-values: 0fd2b6a3129988d701d10e30f0622d5f039531bc
+  react-native-quick-crypto: 70dd506a6e66c2890938fb04545a576af1a83897
   react-native-webrtc: eb8582f60b91e8883c290425bf1676c4bcedd63d
   React-nativeconfig: b4d4e9901d4cabb57be63053fd2aa6086eb3c85f
   React-NativeModulesApple: 541d64309a3037060cc416db5c8a63ee5884048e

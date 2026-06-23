@@ -627,168 +627,135 @@ class MatrixService extends EventEmitter {
         });
     }
 
-    async uploadFile(roomId: string, file: {
-        uri: string,
-        type: string,
-        name: string,
-        size?: number,
-        info?: any
-    }) {
-        if (!this.client) return;
+    // --- THAY THẾ HOÀN TOÀN HÀM uploadFile TRONG MATRIX.TS ---
+    async uploadFile(roomId: string, file: { uri: string, type: string, name: string, size?: number, info?: any }) {
+        if (!this.client) return null;
 
         const isEncrypted = this.client.isRoomEncrypted(roomId);
         const canEncrypt = this.client.isCryptoEnabled();
 
-        let encryptionInfo: any = null;
-        let uploadUri = file.uri;
+        let fileUriToUpload = file.uri;
         let uploadMimeType = file.type;
+        let encryptionInfo: any = null;
+        let tempEncryptedUri: string | null = null;
 
-        if (isEncrypted && canEncrypt) {
-            console.log("🔒 Encrypting attachment file for E2EE room...");
-            const fileInfo = await FileSystem.getInfoAsync(file.uri);
-            const fileSize = fileInfo.size || 0;
-            const chunkSize = 512 * 1024; // 🌟 512KB chunks để tránh phình RAM và block UI
-            let position = 0;
+        try {
+            if (isEncrypted && canEncrypt) {
+                console.log("🔒 PROGRESSIVE: Đang băm tiến trình mã hóa file nhị phân sạch...");
+                const key = CryptoJS.lib.WordArray.random(32);
+                const iv = CryptoJS.lib.WordArray.random(16);
 
-            const key = CryptoJS.lib.WordArray.random(32);
-            const iv = CryptoJS.lib.WordArray.random(16);
-
-            const encryptor = CryptoJS.algo.AES.createEncryptor(key, {
-                iv: iv,
-                mode: CryptoJS.mode.CTR,
-                padding: CryptoJS.pad.NoPadding
-            });
-
-            const accumulatedWords = CryptoJS.lib.WordArray.create();
-            const sha256Algo = CryptoJS.algo.SHA256.create();
-
-            // 🌟 Đọc và mã hoá từng phần nhỏ giống Element Classic để không dồn cục bộ lên RAM
-            while (position < fileSize) {
-                const length = Math.min(chunkSize, fileSize - position);
-                const chunkBase64 = await FileSystem.readAsStringAsync(file.uri, {
-                    encoding: FileSystem.EncodingType.Base64,
-                    position,
-                    length
+                const encryptor = CryptoJS.algo.AES.createEncryptor(key, {
+                    iv: iv,
+                    mode: CryptoJS.mode.CTR,
+                    padding: CryptoJS.pad.NoPadding
                 });
 
-                const chunkWordArray = CryptoJS.enc.Base64.parse(chunkBase64);
-                const encryptedChunk = encryptor.process(chunkWordArray);
+                const hasher = CryptoJS.algo.SHA256.create();
+                const fileInfo = (await FileSystem.getInfoAsync(file.uri)) as any;
+                const fileSize = fileInfo.size || 0;
+                const chunkSize = 512 * 1024; // 🌟 512KB Chunks tăng tốc xử lý
+                let position = 0;
 
-                if (encryptedChunk && encryptedChunk.sigBytes > 0) {
-                    accumulatedWords.concat(encryptedChunk);
-                    sha256Algo.update(encryptedChunk);
+                // 🌟 CHUẨN ELEMENT: Gom các WordArray thô nguyên bản trên RAM, tuyệt đối không append chuỗi Base64
+                const accumulatedWords = CryptoJS.lib.WordArray.create();
+
+                while (position < fileSize) {
+                    const length = Math.min(chunkSize, fileSize - position);
+                    const chunkBase64 = await FileSystem.readAsStringAsync(file.uri, {
+                        encoding: FileSystem.EncodingType.Base64,
+                        position,
+                        length
+                    });
+
+                    const chunkWordArray = CryptoJS.enc.Base64.parse(chunkBase64);
+                    const encryptedChunk = encryptor.process(chunkWordArray);
+                    
+                    if (encryptedChunk && encryptedChunk.sigBytes > 0) {
+                        hasher.update(encryptedChunk);
+                        accumulatedWords.concat(encryptedChunk);
+                    }
+
+                    position += length;
+                    await new Promise<void>(resolve => setTimeout(resolve, 0));
                 }
 
-                position += length;
-                // Nhường luồng cho UI cập nhật, tránh treo máy khi mã hoá file lớn
-                await new Promise<void>(resolve => setTimeout(resolve, 0));
+                const finalChunk = encryptor.finalize();
+                if (finalChunk && finalChunk.sigBytes > 0) {
+                    hasher.update(finalChunk);
+                    accumulatedWords.concat(finalChunk);
+                }
+
+                // 🌟 STRINGIFY DUY NHẤT 1 LẦN: Giữ nguyên cấu trúc khối tệp nhị phân gốc
+                const finalBase64Data = CryptoJS.enc.Base64.stringify(accumulatedWords);
+                
+                const fileExtension = file.name.split('.').pop() || 'mp4';
+                tempEncryptedUri = FileSystem.cacheDirectory + 'enc_temp_' + Date.now() + '.' + fileExtension;
+
+                await FileSystem.writeAsStringAsync(tempEncryptedUri, finalBase64Data, {
+                    encoding: FileSystem.EncodingType.Base64
+                });
+
+                const keyBase64Url = key.toString(CryptoJS.enc.Base64).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+                const ivBase64 = iv.toString(CryptoJS.enc.Base64).replace(/=+$/, '');
+                const sha256Hash = hasher.finalize().toString(CryptoJS.enc.Base64).replace(/=+$/, '');
+
+                encryptionInfo = {
+                    v: "v2",
+                    key: { alg: "A256CTR", ext: true, k: keyBase64Url, key_ops: ["encrypt", "decrypt"], kty: "oct" },
+                    iv: ivBase64,
+                    hashes: { sha256: sha256Hash }
+                };
+
+                fileUriToUpload = tempEncryptedUri;
+                uploadMimeType = "application/octet-stream";
             }
 
-            const finalChunk = encryptor.finalize();
-            if (finalChunk && finalChunk.sigBytes > 0) {
-                accumulatedWords.concat(finalChunk);
-                sha256Algo.update(finalChunk);
-            }
+            // Stream Upload Native từ ổ cứng lên Server Matrix
+            const uploadUrl = `${this.client.getHomeserverUrl()}/_matrix/media/v3/upload?filename=${encodeURIComponent(file.name)}`;
+            const uploadResult = await FileSystem.uploadAsync(uploadUrl, fileUriToUpload, {
+                headers: { 'Authorization': `Bearer ${this.client.getAccessToken()}`, 'Content-Type': uploadMimeType },
+                httpMethod: 'POST',
+                uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT
+            });
 
-            // Chỉ convert ra base64 duy nhất 1 lần ở cuối cùng để write ra ổ cứng
-            const encryptedBase64 = CryptoJS.enc.Base64.stringify(accumulatedWords);
-            uploadUri = FileSystem.cacheDirectory + 'enc_up_' + Date.now();
-            await FileSystem.writeAsStringAsync(uploadUri, encryptedBase64, { encoding: FileSystem.EncodingType.Base64 });
-            uploadMimeType = "application/octet-stream";
+            if (uploadResult.status !== 200) throw new Error(`Upload failed with status ${uploadResult.status}`);
 
-            const keyBase64Url = key.toString(CryptoJS.enc.Base64).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-            const ivBase64 = iv.toString(CryptoJS.enc.Base64).replace(/=+$/, '');
-            const sha256Hash = sha256Algo.finalize().toString(CryptoJS.enc.Base64).replace(/=+$/, '');
+            const uploadResponse = JSON.parse(uploadResult.body);
+            const content_uri = uploadResponse.content_uri;
 
-            encryptionInfo = {
-                v: "v2",
-                key: { alg: "A256CTR", ext: true, k: keyBase64Url, key_ops: ["encrypt", "decrypt"], kty: "oct" },
-                iv: ivBase64,
-                hashes: { sha256: sha256Hash }
+            let msgtype = 'm.file';
+            if (file.type?.startsWith('image/')) msgtype = 'm.image';
+            else if (file.type?.startsWith('audio/')) msgtype = 'm.audio';
+            else if (file.type?.startsWith('video/')) msgtype = 'm.video';
+
+            const content: any = {
+                body: file.name || "Attachment",
+                msgtype: msgtype,
+                info: { mimetype: file.type, size: file.size, ...file.info }
             };
-            console.log("🔒 Attachment file E2EE encryption complete!");
-        }
 
-        // 🌟 SỬ DỤNG EXPO FILE SYSTEM ĐỂ UPLOAD TRỰC TIẾP TỪ URI 🌟
-        // Việc này ngăn chặn React Native Fetch biến đổi Buffer thành String [object Object] làm hỏng File
-        const uploadUrl = `${this.client.getHomeserverUrl()}/_matrix/media/v3/upload?filename=${encodeURIComponent(file.name)}`;
-        const uploadResponse = await FileSystem.uploadAsync(uploadUrl, uploadUri, {
-            httpMethod: 'POST',
-            uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
-            headers: {
-                'Authorization': `Bearer ${this.client.getAccessToken()}`,
-                'Content-Type': uploadMimeType
-            }
-        });
-
-        if (uploadResponse.status !== 200) {
-            if (isEncrypted && canEncrypt) {
-                await FileSystem.deleteAsync(uploadUri, { idempotent: true }).catch(() => {});
-            }
-            throw new Error(`Upload failed with status ${uploadResponse.status}`);
-        }
-
-        const responseBody = JSON.parse(uploadResponse.body);
-        const content_uri = responseBody.content_uri;
-
-        if (isEncrypted && canEncrypt) {
-            await FileSystem.deleteAsync(uploadUri, { idempotent: true }).catch(() => {});
-        }
-
-        let msgtype = 'm.file';
-        if (file.type?.startsWith('image/')) msgtype = 'm.image';
-        else if (file.type?.startsWith('audio/')) msgtype = 'm.audio';
-        else if (file.type?.startsWith('video/')) msgtype = 'm.video';
-
-        const content: any = {
-            body: file.name || "Attachment",
-            msgtype: msgtype,
-            info: {
-                mimetype: file.type,
-                size: file.size,
-                ...file.info
-            }
-        };
-
-        if (isEncrypted && canEncrypt && encryptionInfo) {
-            encryptionInfo.url = content_uri;
-            content.file = encryptionInfo;
-        } else {
-            content.url = content_uri;
-        }
-
-        // Bổ sung chuẩn Voice Messages MSC3245 của Matrix để các client (Element) hiển thị đúng UI tin nhắn thoại
-        if (msgtype === 'm.audio') {
-            content["org.matrix.msc3245.voice"] = {};
-            content["org.matrix.msc1767.text"] = file.name || "Voice message";
-
-            const msc1767File: any = {
-                name: file.name,
-                mimetype: file.type,
-                size: file.size
-            };
             if (isEncrypted && canEncrypt && encryptionInfo) {
-                msc1767File.file = encryptionInfo;
+                encryptionInfo.url = content_uri;
+                content.file = encryptionInfo;
             } else {
-                msc1767File.url = content_uri;
+                content.url = content_uri;
             }
-            content["org.matrix.msc1767.file"] = msc1767File;
 
-            content["org.matrix.msc1767.audio"] = {
-                duration: file.info?.duration || 0
-            };
-            // Đảm bảo trường duration chuẩn của m.audio cũng được set một cách tường minh
-            // phòng trường hợp spread operator (...) có lỗi ngầm.
-            if (file.info?.duration) {
-                content.info.duration = file.info.duration;
-            }
+            // Đồng bộ cache mồi mượt mà cho người gửi
+            try {
+                const safeId = content_uri.replace(/[^a-zA-Z0-9]/g, '_');
+                const fileExtension = file.name.split('.').pop() || 'mp4';
+                const prefix = msgtype === 'm.video' ? 'vid_v3_' : 'img_v3_';
+                const cacheUri = FileSystem.cacheDirectory + prefix + safeId + '.' + fileExtension;
+                await FileSystem.copyAsync({ from: file.uri, to: cacheUri });
+            } catch (cacheErr) {}
+
+            const sendResponse = await this._safeSendEvent(roomId, "m.room.message", content);
+            return { ...sendResponse, mxcUrl: content_uri };
+        } finally {
+            if (tempEncryptedUri) await FileSystem.deleteAsync(tempEncryptedUri, { idempotent: true }).catch(() => {});
         }
-
-        const sendResponse = await this._safeSendEvent(roomId, "m.room.message", content);
-        return {
-            ...sendResponse,
-            mxcUrl: content_uri
-        };
     }
 
     async searchUsers(term: string) {
@@ -999,11 +966,10 @@ class MatrixService extends EventEmitter {
     }
 }
 
+// --- THAY THẾ HOÀN TOÀN HÀM decryptMatrixFile Ở CUỐI FILE MATRIX.TS ---
 export async function decryptMatrixFile(file: any, targetUri?: string) {
     const client = getMatrixClient();
-    if (!client || !file || !file.url) {
-        throw new Error("File info is missing.");
-    }
+    if (!client || !file || !file.url) throw new Error("File info is missing.");
 
     const outputUri = targetUri || (FileSystem.cacheDirectory + 'dec_temp_' + Date.now());
 
@@ -1012,56 +978,46 @@ export async function decryptMatrixFile(file: any, targetUri?: string) {
         if (httpUrl) {
             httpUrl = httpUrl.replace(/\/_matrix\/media\/(r0|v3)\/(download|thumbnail)\//, '/_matrix/client/v1/media/$2/');
         }
-        const headers: any = {};
-        if (client.getAccessToken()) {
-            headers['Authorization'] = `Bearer ${client.getAccessToken()}`;
-        }
-
+        
         const tempUri = FileSystem.cacheDirectory + 'enc_' + Date.now();
-        const downloadResult = await FileSystem.downloadAsync(httpUrl, tempUri, { headers });
-        if (downloadResult.status !== 200) {
-            throw new Error(`Failed to fetch encrypted file: HTTP ${downloadResult.status}`);
-        }
+        const downloadResult = await FileSystem.downloadAsync(httpUrl, tempUri, {
+            headers: client?.getAccessToken() ? { Authorization: `Bearer ${client.getAccessToken()}` } : {}
+        });
+        
+        if (downloadResult.status !== 200) throw new Error(`HTTP ${downloadResult.status}`);
 
-        // 1. Chuẩn bị khóa giải mã (Base64URL sang Base64 chuẩn)
         const keyBase64 = file.key.k.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - (file.key.k.length % 4)) % 4);
         const ivBase64 = file.iv.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - (file.iv.length % 4)) % 4);
 
         const key = CryptoJS.enc.Base64.parse(keyBase64);
         const iv = CryptoJS.enc.Base64.parse(ivBase64);
 
-        const decryptor = CryptoJS.algo.AES.createDecryptor(key, {
-            iv: iv,
-            mode: CryptoJS.mode.CTR,
-            padding: CryptoJS.pad.NoPadding
-        });
-
-        const fileInfo = await FileSystem.getInfoAsync(downloadResult.uri);
+        const decryptor = CryptoJS.algo.AES.createDecryptor(key, { iv: iv, mode: CryptoJS.mode.CTR, padding: CryptoJS.pad.NoPadding });
+        const fileInfo = (await FileSystem.getInfoAsync(downloadResult.uri)) as any;
         const fileSize = fileInfo.size || 0;
-        const chunkSize = 512 * 1024; // 🌟 Tăng lên 512KB mỗi chunk để xử lý luồng nhị phân Video nhanh hơn
+        const chunkSize = 512 * 1024; // 🌟 512KB Chunks tối ưu hóa tốc độ bẻ khóa ngầm
         let position = 0;
 
-        // Khởi tạo mảng WordArray tổng lực để gom các mảnh bytes sạch cục bộ
+        // 🌟 CHUẨN ELEMENT CLASSIC: Tạo thực thể WordArray tổng lực để gom các mảnh bytes thô sạch
+        // Tuyệt đối không append text chuỗi Base64 làm gãy liên kết khối nhị phân Mp4
         const accumulatedWords = CryptoJS.lib.WordArray.create();
+
+        const checkOutput = await FileSystem.getInfoAsync(outputUri);
+        if (checkOutput.exists) await FileSystem.deleteAsync(outputUri, { idempotent: true });
 
         while (position < fileSize) {
             const length = Math.min(chunkSize, fileSize - position);
-            const chunkBase64 = await FileSystem.readAsStringAsync(downloadResult.uri, {
-                encoding: FileSystem.EncodingType.Base64,
-                position,
-                length
-            });
+            const chunkBase64 = await FileSystem.readAsStringAsync(downloadResult.uri, { encoding: FileSystem.EncodingType.Base64, position, length });
 
             const ciphertextChunk = CryptoJS.enc.Base64.parse(chunkBase64);
             const decryptedChunk = decryptor.process(ciphertextChunk);
             
-            // 🌟 GIẢI PHÁP VÀNG: Gom luồng dữ liệu WordArray thô vào bộ nhớ đệm
-            if (decryptedChunk) {
+            if (decryptedChunk && decryptedChunk.sigBytes > 0) {
                 accumulatedWords.concat(decryptedChunk);
             }
 
             position += length;
-            // Trả lại tiến trình giải phóng UI (Yielding) giúp gõ chữ và cuộn màn hình mượt mà
+            // Giải phóng luồng UI (Yielding) giúp thiết bị chạy mát lạnh, mượt mà khi nhận file nặng
             await new Promise<void>(resolve => setTimeout(resolve, 0));
         }
 
@@ -1070,29 +1026,17 @@ export async function decryptMatrixFile(file: any, targetUri?: string) {
             accumulatedWords.concat(finalChunk);
         }
 
-        // 🌟 CHUYỂN ĐỔI DUY NHẤT 1 LẦN: Convert mảng WordArray nguyên khối sạch sang Base64
-        // Việc này loại bỏ hoàn toàn lỗi gãy cấu trúc block nhị phân Mp4
+        // 🌟 CHUYỂN ĐỔI DUY NHẤT 1 LẦN: Convert mảng WordArray nguyên khối sạch sang Base64 chuẩn
         const finalBase64Data = CryptoJS.enc.Base64.stringify(accumulatedWords);
 
-        // Clear tệp cũ nếu có trùng lặp
-        const checkOutput = await FileSystem.getInfoAsync(outputUri);
-        if (checkOutput.exists) {
-            await FileSystem.deleteAsync(outputUri, { idempotent: true });
-        }
-
-        // Ghi file sạch hoàn chỉnh ra ổ cứng máy
+        // Viết file sạch hoàn chỉnh ra đĩa máy đầu nhận
         await FileSystem.writeAsStringAsync(outputUri, finalBase64Data, {
             encoding: FileSystem.EncodingType.Base64
         });
 
         // Dọn dẹp tệp tạm download mã hóa để giải phóng dung lượng ổ cứng
         await FileSystem.deleteAsync(downloadResult.uri, { idempotent: true }).catch(() => {});
-
-        if (targetUri) {
-            return targetUri;
-        } else {
-            return finalBase64Data;
-        }
+        return outputUri;
     } catch (e: any) {
         console.error("❌ Lỗi luồng giải mã nhận file media:", e);
         throw e;
