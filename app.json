@@ -12,7 +12,7 @@
     },
     "ios": {
       "bundleIdentifier": "chatapp.5hpc.app",
-      "buildNumber": "48",
+      "buildNumber": "51",
       "entitlements": {
         "aps-environment": "production"
       },

@@ -108,6 +108,11 @@ export const setCurrentActiveRoomId = (id: string | null) => {
     globalStore.__currentActiveRoomId = id;
 };
 
+// 🌟 HÀM TIỆN ÍCH: Ép chuỗi sang định dạng Unpadded Base64 chuẩn quốc tế của Matrix
+const toUnpaddedBase64 = (wordArray: CryptoJS.lib.WordArray) => {
+    return wordArray.toString(CryptoJS.enc.Base64).replace(/=+$/, '');
+};
+
 function bufferToWordArray(buffer: Buffer): CryptoJS.lib.WordArray {
     const len = buffer.length;
     const words: number[] = [];
@@ -654,10 +659,11 @@ class MatrixService extends EventEmitter {
                 const hasher = CryptoJS.algo.SHA256.create();
                 const fileInfo = (await FileSystem.getInfoAsync(file.uri)) as any;
                 const fileSize = fileInfo.size || 0;
-                const chunkSize = 512 * 1024; // 🌟 512KB Chunks tăng tốc xử lý
+                const chunkSize = 512 * 1024; // 512KB Chunks
                 let position = 0;
 
-                // 🌟 CHUẨN ELEMENT: Gom các WordArray thô nguyên bản trên RAM, tuyệt đối không append chuỗi Base64
+                // 🌟 CHUẨN ELEMENT CLASSIC: Tạo thực thể WordArray nguyên khối sạch để gom trực tiếp Bytes thô
+                // Tuyệt đối không stringify sang chuỗi văn bản Base64 ở từng vòng lặp làm hỏng đệm mật mã
                 const accumulatedWords = CryptoJS.lib.WordArray.create();
 
                 while (position < fileSize) {
@@ -673,7 +679,7 @@ class MatrixService extends EventEmitter {
                     
                     if (encryptedChunk && encryptedChunk.sigBytes > 0) {
                         hasher.update(encryptedChunk);
-                        accumulatedWords.concat(encryptedChunk);
+                        accumulatedWords.concat(encryptedChunk); // 🌟 Gom bytes thô sạch liên tục
                     }
 
                     position += length;
@@ -686,7 +692,8 @@ class MatrixService extends EventEmitter {
                     accumulatedWords.concat(finalChunk);
                 }
 
-                // 🌟 STRINGIFY DUY NHẤT 1 LẦN: Giữ nguyên cấu trúc khối tệp nhị phân gốc
+                // 🌟 ÉP KIỂU DUY NHẤT 1 LẦN KHI KẾT THÚC: Chuyển đổi khối dữ liệu thô nguyên vẹn sang Base64
+                // Xcode Release Mode hoàn toàn bất lực, không thể can thiệp phá vỡ cấu trúc nhị phân của tệp
                 const finalBase64Data = CryptoJS.enc.Base64.stringify(accumulatedWords);
                 
                 const fileExtension = file.name.split('.').pop() || 'mp4';
@@ -696,15 +703,22 @@ class MatrixService extends EventEmitter {
                     encoding: FileSystem.EncodingType.Base64
                 });
 
-                const keyBase64Url = key.toString(CryptoJS.enc.Base64).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-                const ivBase64 = iv.toString(CryptoJS.enc.Base64).replace(/=+$/, '');
-                const sha256Hash = hasher.finalize().toString(CryptoJS.enc.Base64).replace(/=+$/, '');
+                // 🌟 FIX GỐC RỄ CHO ELEMENT: Giữ nguyên ký tự + và / thô theo chuẩn Unpadded Base64 quốc tế
+                const keyBase64Unpadded = toUnpaddedBase64(key);
+                const ivBase64Unpadded = toUnpaddedBase64(iv);
+                const sha256HashUnpadded = hasher.finalize().toString(CryptoJS.enc.Base64).replace(/=+$/, '');
 
                 encryptionInfo = {
                     v: "v2",
-                    key: { alg: "A256CTR", ext: true, k: keyBase64Url, key_ops: ["encrypt", "decrypt"], kty: "oct" },
-                    iv: ivBase64,
-                    hashes: { sha256: sha256Hash }
+                    key: { 
+                        alg: "A256CTR", 
+                        ext: true, 
+                        k: keyBase64Unpadded, // Chuẩn Unpadded giữ nguyên + và /
+                        key_ops: ["encrypt", "decrypt"], 
+                        kty: "oct" 
+                    },
+                    iv: ivBase64Unpadded,
+                    hashes: { sha256: sha256HashUnpadded }
                 };
 
                 fileUriToUpload = tempEncryptedUri;
@@ -749,12 +763,14 @@ class MatrixService extends EventEmitter {
                 const prefix = msgtype === 'm.video' ? 'vid_v3_' : 'img_v3_';
                 const cacheUri = FileSystem.cacheDirectory + prefix + safeId + '.' + fileExtension;
                 await FileSystem.copyAsync({ from: file.uri, to: cacheUri });
-            } catch (cacheErr) {}
+            } catch (cacheErr) { }
 
             const sendResponse = await this._safeSendEvent(roomId, "m.room.message", content);
             return { ...sendResponse, mxcUrl: content_uri };
         } finally {
-            if (tempEncryptedUri) await FileSystem.deleteAsync(tempEncryptedUri, { idempotent: true }).catch(() => {});
+            if (tempEncryptedUri) {
+                await FileSystem.deleteAsync(tempEncryptedUri, { idempotent: true }).catch(() => {});
+            }
         }
     }
 
@@ -978,12 +994,12 @@ export async function decryptMatrixFile(file: any, targetUri?: string) {
         if (httpUrl) {
             httpUrl = httpUrl.replace(/\/_matrix\/media\/(r0|v3)\/(download|thumbnail)\//, '/_matrix/client/v1/media/$2/');
         }
-        
+
         const tempUri = FileSystem.cacheDirectory + 'enc_' + Date.now();
         const downloadResult = await FileSystem.downloadAsync(httpUrl, tempUri, {
             headers: client?.getAccessToken() ? { Authorization: `Bearer ${client.getAccessToken()}` } : {}
         });
-        
+
         if (downloadResult.status !== 200) throw new Error(`HTTP ${downloadResult.status}`);
 
         const keyBase64 = file.key.k.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - (file.key.k.length % 4)) % 4);
@@ -995,11 +1011,10 @@ export async function decryptMatrixFile(file: any, targetUri?: string) {
         const decryptor = CryptoJS.algo.AES.createDecryptor(key, { iv: iv, mode: CryptoJS.mode.CTR, padding: CryptoJS.pad.NoPadding });
         const fileInfo = (await FileSystem.getInfoAsync(downloadResult.uri)) as any;
         const fileSize = fileInfo.size || 0;
-        const chunkSize = 512 * 1024; // 🌟 512KB Chunks tối ưu hóa tốc độ bẻ khóa ngầm
+        const chunkSize = 512 * 1024; // 512KB Chunks giải mã tiệm tiến
         let position = 0;
 
-        // 🌟 CHUẨN ELEMENT CLASSIC: Tạo thực thể WordArray tổng lực để gom các mảnh bytes thô sạch
-        // Tuyệt đối không append text chuỗi Base64 làm gãy liên kết khối nhị phân Mp4
+        // 🌟 NỐI KHỐI NHỊ PHÂN NATIVE: Gom các phân đoạn sạch bằng mảng bytes thô
         const accumulatedWords = CryptoJS.lib.WordArray.create();
 
         const checkOutput = await FileSystem.getInfoAsync(outputUri);
@@ -1013,11 +1028,10 @@ export async function decryptMatrixFile(file: any, targetUri?: string) {
             const decryptedChunk = decryptor.process(ciphertextChunk);
             
             if (decryptedChunk && decryptedChunk.sigBytes > 0) {
-                accumulatedWords.concat(decryptedChunk);
+                accumulatedWords.concat(decryptedChunk); // 🌟 Dồn bytes nhị phân thô sạch liên tục
             }
 
             position += length;
-            // Giải phóng luồng UI (Yielding) giúp thiết bị chạy mát lạnh, mượt mà khi nhận file nặng
             await new Promise<void>(resolve => setTimeout(resolve, 0));
         }
 
@@ -1026,16 +1040,15 @@ export async function decryptMatrixFile(file: any, targetUri?: string) {
             accumulatedWords.concat(finalChunk);
         }
 
-        // 🌟 CHUYỂN ĐỔI DUY NHẤT 1 LẦN: Convert mảng WordArray nguyên khối sạch sang Base64 chuẩn
+        // 🌟 CHUYỂN ĐỔI DUY NHẤT 1 LẦN: Xuất chuỗi Base64 nguyên khối, triệt hạ lỗi domain vĩnh viễn
         const finalBase64Data = CryptoJS.enc.Base64.stringify(accumulatedWords);
 
-        // Viết file sạch hoàn chỉnh ra đĩa máy đầu nhận
         await FileSystem.writeAsStringAsync(outputUri, finalBase64Data, {
             encoding: FileSystem.EncodingType.Base64
         });
 
         // Dọn dẹp tệp tạm download mã hóa để giải phóng dung lượng ổ cứng
-        await FileSystem.deleteAsync(downloadResult.uri, { idempotent: true }).catch(() => {});
+        await FileSystem.deleteAsync(downloadResult.uri, { idempotent: true }).catch(() => { });
         return outputUri;
     } catch (e: any) {
         console.error("❌ Lỗi luồng giải mã nhận file media:", e);
