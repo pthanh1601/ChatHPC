@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { View, Text, Image, TouchableOpacity, ScrollView, LayoutAnimation, Platform, UIManager } from 'react-native';
 import { Plus, CheckCheck, MessageSquarePlus } from 'lucide-react-native';
 import { AppScreen, CONTACTS } from '../data';
-import { getMatrixClient, setCurrentActiveRoomId } from './matrix';
+import { getMatrixClient, setCurrentActiveRoomId, persistentLocalStorage } from './matrix';
 import { Header } from '../components/Header';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -21,7 +21,7 @@ export function ChatList({ setScreen }: { setScreen: (s: AppScreen) => void }) {
       const timeline = room.timeline;
       const lastEvent = timeline.length > 0 ? timeline[timeline.length - 1] : null;
       const isInvite = room.getMyMembership() === 'invite';
-      
+
       let lastMessage = 'Chưa có tin nhắn';
       let time = '';
 
@@ -45,14 +45,14 @@ export function ChatList({ setScreen }: { setScreen: (s: AppScreen) => void }) {
         const mins = date.getMinutes().toString().padStart(2, '0');
         time = `${hours}:${mins}`;
       }
-      
+
       if (isInvite) {
         lastMessage = 'Bạn nhận được lời mời tham gia nhóm';
         time = time || 'Mới';
       }
 
       let avatar = room.getAvatarUrl(client.getHomeserverUrl(), 56, 56, 'crop', false, false);
-      if (!avatar) avatar = CONTACTS.aria.avatar; 
+      if (!avatar) avatar = CONTACTS.aria.avatar;
 
       // Lấy số lượng tin nhắn chưa đọc (Bao gồm cả thông báo tag/highlight)
       const unreadCount = room.getUnreadNotificationCount('total') || room.getUnreadNotificationCount('highlight') || 0;
@@ -70,23 +70,42 @@ export function ChatList({ setScreen }: { setScreen: (s: AppScreen) => void }) {
     });
 
     chatData.sort((a, b) => b.timestamp - a.timestamp);
+
+    // Lưu cache để lần sau mở app có ngay dữ liệu không cần đợi load, tạo cảm giác mượt như Element Classic
+    if (chatData.length > 0 || (client.getSyncState && client.getSyncState() === 'PREPARED')) {
+      persistentLocalStorage.setItem('cached_chat_list', JSON.stringify(chatData));
+    }
+
     return chatData;
   };
 
   // Khởi tạo state ngay từ đầu để tránh màn hình bị nháy trống trơn lúc mới load
-  const [chats, setChats] = useState<any[]>(getInitialChats);
+  const [chats, setChats] = useState<any[]>(() => {
+    const cached = persistentLocalStorage.getItem('cached_chat_list');
+    if (cached) {
+      try {
+        return JSON.parse(cached);
+      } catch (e) {}
+    }
+    return getInitialChats();
+  });
 
   useEffect(() => {
     const client = getMatrixClient();
     if (!client) return;
 
     const updateChats = () => {
-      setChats(getInitialChats());
+      const newChats = getInitialChats();
+      // Không ghi đè mảng rỗng làm nháy màn hình nếu Matrix chưa đồng bộ xong
+      if (newChats.length === 0 && client.getSyncState() !== 'PREPARED') {
+        return;
+      }
+      setChats(newChats);
     };
 
     client.on('Room.timeline' as any, updateChats);
     client.on('sync' as any, updateChats);
-    
+
     updateChats();
 
     return () => {
@@ -120,8 +139,8 @@ export function ChatList({ setScreen }: { setScreen: (s: AppScreen) => void }) {
     <View className="flex-1 bg-background">
       <Header title="Tin nhắn" blurIntensity={blurIntensity} setScreen={setScreen} />
 
-      <ScrollView 
-        className="flex-1 px-5" 
+      <ScrollView
+        className="flex-1 px-5"
         contentContainerStyle={{ paddingTop: 120, paddingBottom: 120 }}
         onScroll={(e) => setBlurIntensity(Math.min(100, Math.max(0, e.nativeEvent.contentOffset.y)))}
         scrollEventThrottle={16}
@@ -152,7 +171,7 @@ export function ChatList({ setScreen }: { setScreen: (s: AppScreen) => void }) {
                 <Text className="text-xs font-medium text-primary">{contact.name.split(' ')[0]}</Text>
               </TouchableOpacity>
             ))}
-            
+
             <TouchableOpacity className="flex-col items-center gap-2 opacity-80 mr-4">
               <View className="w-16 h-16 rounded-full p-[2px] bg-gray-600">
                 <View className="w-full h-full rounded-full overflow-hidden border-2 border-background">
@@ -175,15 +194,15 @@ export function ChatList({ setScreen }: { setScreen: (s: AppScreen) => void }) {
 
         <View className="gap-4 pb-20">
           {chats.map((chat) => (
-            <TouchableOpacity 
-              key={chat.id} 
+            <TouchableOpacity
+              key={chat.id}
               onPress={() => {
                 if (!chat.isInvite) {
                   setCurrentActiveRoomId(chat.id);
                   LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
                   setScreen('chat_single');
                 }
-              }} 
+              }}
               activeOpacity={chat.isInvite ? 1 : 0.7}
               className={`rounded-2xl p-4 flex-col relative overflow-hidden border ${chat.isInvite ? 'bg-card border-primary/50 shadow-lg shadow-primary/10' : (chat.unread > 0 ? 'bg-surface border-white/10' : 'bg-card border-white/5')}`}
             >
@@ -215,13 +234,13 @@ export function ChatList({ setScreen }: { setScreen: (s: AppScreen) => void }) {
               {/* Các nút hành động nếu đây là lời mời */}
               {chat.isInvite && (
                 <View className="flex-row gap-3 mt-4 pt-4 border-t border-white/10">
-                  <TouchableOpacity 
+                  <TouchableOpacity
                     onPress={() => handleRejectInvite(chat.id)}
                     className="flex-1 py-2.5 rounded-xl border border-[#ef4444]/30 bg-[#ef4444]/10 items-center justify-center"
                   >
                     <Text className="text-[#ef4444] font-semibold text-sm">Từ chối</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity 
+                  <TouchableOpacity
                     onPress={() => handleAcceptInvite(chat.id)}
                     className="flex-1 py-2.5 rounded-xl bg-primary items-center justify-center shadow-lg shadow-primary/20"
                   >
@@ -231,7 +250,7 @@ export function ChatList({ setScreen }: { setScreen: (s: AppScreen) => void }) {
               )}
             </TouchableOpacity>
           ))}
-          
+
           {chats.length === 0 && (
             <Text className="text-gray-500 text-center mt-4 text-sm font-medium">Chưa có tin nhắn nào</Text>
           )}
