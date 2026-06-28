@@ -648,7 +648,10 @@ class MatrixService extends EventEmitter {
             if (isEncrypted && canEncrypt) {
                 console.log("🔒 PROGRESSIVE: Đang băm tiến trình mã hóa file nhị phân sạch...");
                 const key = CryptoJS.lib.WordArray.random(32);
-                const iv = CryptoJS.lib.WordArray.random(16);
+                
+                // 🌟 LỖI BẢO MẬT MATRIX: Nửa sau của IV (64-bit cuối) BẮT BUỘC phải là 0
+                const randomWords = CryptoJS.lib.WordArray.random(8).words; // Lấy 8 bytes đầu
+                const iv = CryptoJS.lib.WordArray.create([randomWords[0], randomWords[1], 0, 0], 16);
 
                 const encryptor = CryptoJS.algo.AES.createEncryptor(key, {
                     iv: iv,
@@ -659,12 +662,13 @@ class MatrixService extends EventEmitter {
                 const hasher = CryptoJS.algo.SHA256.create();
                 const fileInfo = (await FileSystem.getInfoAsync(file.uri)) as any;
                 const fileSize = fileInfo.size || 0;
-                const chunkSize = 512 * 1024; // 512KB Chunks
+                
+                // 🌟 GIẢI PHÁP CHỐNG NÓNG MÁY VÀ CRASH RAM:
+                // Không dùng mảng accumulatedWords.concat() vì nó nhồi hàng triệu object vào RAM gây tràn!
+                // Thay vào đó ta nối trực tiếp chuỗi String. Chọn chunkSize = 960000 vì nó chia hết cho 16 và 3.
+                const chunkSize = 960000;
                 let position = 0;
-
-                // 🌟 CHUẨN ELEMENT CLASSIC: Tạo thực thể WordArray nguyên khối sạch để gom trực tiếp Bytes thô
-                // Tuyệt đối không stringify sang chuỗi văn bản Base64 ở từng vòng lặp làm hỏng đệm mật mã
-                const accumulatedWords = CryptoJS.lib.WordArray.create();
+                let finalBase64Data = '';
 
                 while (position < fileSize) {
                     const length = Math.min(chunkSize, fileSize - position);
@@ -674,28 +678,24 @@ class MatrixService extends EventEmitter {
                         length
                     });
 
-                    const chunkWordArray = CryptoJS.enc.Base64.parse(chunkBase64);
+                    const chunkWordArray = CryptoJS.enc.Base64.parse(chunkBase64.replace(/\s+/g, ''));
                     const encryptedChunk = encryptor.process(chunkWordArray);
                     
                     if (encryptedChunk && encryptedChunk.sigBytes > 0) {
                         hasher.update(encryptedChunk);
-                        accumulatedWords.concat(encryptedChunk); // 🌟 Gom bytes thô sạch liên tục
+                        finalBase64Data += CryptoJS.enc.Base64.stringify(encryptedChunk);
                     }
 
                     position += length;
-                    await new Promise<void>(resolve => setTimeout(resolve, 0));
+                    await new Promise<void>(resolve => setTimeout(resolve, 5)); // Cho UI nghỉ ngơi để máy không bị nóng
                 }
 
                 const finalChunk = encryptor.finalize();
                 if (finalChunk && finalChunk.sigBytes > 0) {
                     hasher.update(finalChunk);
-                    accumulatedWords.concat(finalChunk);
+                    finalBase64Data += CryptoJS.enc.Base64.stringify(finalChunk);
                 }
 
-                // 🌟 ÉP KIỂU DUY NHẤT 1 LẦN KHI KẾT THÚC: Chuyển đổi khối dữ liệu thô nguyên vẹn sang Base64
-                // Xcode Release Mode hoàn toàn bất lực, không thể can thiệp phá vỡ cấu trúc nhị phân của tệp
-                const finalBase64Data = CryptoJS.enc.Base64.stringify(accumulatedWords);
-                
                 const fileExtension = file.name.split('.').pop() || 'mp4';
                 tempEncryptedUri = FileSystem.cacheDirectory + 'enc_temp_' + Date.now() + '.' + fileExtension;
 
@@ -703,8 +703,15 @@ class MatrixService extends EventEmitter {
                     encoding: FileSystem.EncodingType.Base64
                 });
 
-                // 🌟 FIX GỐC RỄ CHO ELEMENT: Giữ nguyên ký tự + và / thô theo chuẩn Unpadded Base64 quốc tế
-                const keyBase64Unpadded = toUnpaddedBase64(key);
+                // 🌟 SỰ KHÁC BIỆT CHẾT NGƯỜI CỦA MATRIX SPEC:
+                // - iv và sha256 DÙNG Base64 thông thường (CHỨA + và /)
+                // - NHƯNG key.k lại thuộc chuẩn JWK, BẮT BUỘC DÙNG Base64URL (THAY + BẰNG - VÀ / BẰNG _)
+                // Việc bạn giữ nguyên + và / cho key.k khiến Element iOS (parse JWK rất khắt khe) đâm ra lỗi Domain 0.
+                const keyBase64Url = key.toString(CryptoJS.enc.Base64)
+                    .replace(/=+$/, '')
+                    .replace(/\+/g, '-')
+                    .replace(/\//g, '_');
+                    
                 const ivBase64Unpadded = toUnpaddedBase64(iv);
                 const sha256HashUnpadded = hasher.finalize().toString(CryptoJS.enc.Base64).replace(/=+$/, '');
 
@@ -713,7 +720,7 @@ class MatrixService extends EventEmitter {
                     key: { 
                         alg: "A256CTR", 
                         ext: true, 
-                        k: keyBase64Unpadded, // Chuẩn Unpadded giữ nguyên + và /
+                        k: keyBase64Url, // BẮT BUỘC LÀ Base64URL
                         key_ops: ["encrypt", "decrypt"], 
                         kty: "oct" 
                     },
@@ -1011,11 +1018,9 @@ export async function decryptMatrixFile(file: any, targetUri?: string) {
         const decryptor = CryptoJS.algo.AES.createDecryptor(key, { iv: iv, mode: CryptoJS.mode.CTR, padding: CryptoJS.pad.NoPadding });
         const fileInfo = (await FileSystem.getInfoAsync(downloadResult.uri)) as any;
         const fileSize = fileInfo.size || 0;
-        const chunkSize = 512 * 1024; // 512KB Chunks giải mã tiệm tiến
+        const chunkSize = 960000;
         let position = 0;
-
-        // 🌟 NỐI KHỐI NHỊ PHÂN NATIVE: Gom các phân đoạn sạch bằng mảng bytes thô
-        const accumulatedWords = CryptoJS.lib.WordArray.create();
+        let finalBase64Data = '';
 
         const checkOutput = await FileSystem.getInfoAsync(outputUri);
         if (checkOutput.exists) await FileSystem.deleteAsync(outputUri, { idempotent: true });
@@ -1024,24 +1029,21 @@ export async function decryptMatrixFile(file: any, targetUri?: string) {
             const length = Math.min(chunkSize, fileSize - position);
             const chunkBase64 = await FileSystem.readAsStringAsync(downloadResult.uri, { encoding: FileSystem.EncodingType.Base64, position, length });
 
-            const ciphertextChunk = CryptoJS.enc.Base64.parse(chunkBase64);
+            const ciphertextChunk = CryptoJS.enc.Base64.parse(chunkBase64.replace(/\s+/g, ''));
             const decryptedChunk = decryptor.process(ciphertextChunk);
             
             if (decryptedChunk && decryptedChunk.sigBytes > 0) {
-                accumulatedWords.concat(decryptedChunk); // 🌟 Dồn bytes nhị phân thô sạch liên tục
+                finalBase64Data += CryptoJS.enc.Base64.stringify(decryptedChunk);
             }
 
             position += length;
-            await new Promise<void>(resolve => setTimeout(resolve, 0));
+            await new Promise<void>(resolve => setTimeout(resolve, 5));
         }
 
         const finalChunk = decryptor.finalize();
         if (finalChunk && finalChunk.sigBytes > 0) {
-            accumulatedWords.concat(finalChunk);
+            finalBase64Data += CryptoJS.enc.Base64.stringify(finalChunk);
         }
-
-        // 🌟 CHUYỂN ĐỔI DUY NHẤT 1 LẦN: Xuất chuỗi Base64 nguyên khối, triệt hạ lỗi domain vĩnh viễn
-        const finalBase64Data = CryptoJS.enc.Base64.stringify(accumulatedWords);
 
         await FileSystem.writeAsStringAsync(outputUri, finalBase64Data, {
             encoding: FileSystem.EncodingType.Base64
