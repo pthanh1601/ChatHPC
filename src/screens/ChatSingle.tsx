@@ -5,10 +5,14 @@ import { Audio, Video as ExpoVideo, ResizeMode } from 'expo-av';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { AppScreen, CONTACTS, MEDIA } from '../data';
-import { getMatrixClient, currentActiveRoomId, matrixService, decryptMatrixFile } from './matrix';
+import { getMatrixClient, currentActiveRoomId, matrixService } from '../services/MatrixService';
+import { mediaService, decryptMatrixFile } from '../services/MediaService';
+import { voipService } from '../services/VoipService';
 import { Header } from '../components/Header';
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
+import * as ImageManipulator from 'expo-image-manipulator';
+import * as VideoThumbnails from 'expo-video-thumbnails';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -343,8 +347,9 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
           text = clear ? (clear.body || text) : "🔒 Tin nhắn đang được giải mã...";
 
           if (clear) {
+            // Đọc mxcUrl linh hoạt từ cả cấu trúc cũ lẫn cấu trúc chuẩn Element mới
             if (clear.url) mxcUrl = clear.url;
-            if (clear.file) mxcUrl = clear.file.url;
+            if (clear.file && clear.file.url) mxcUrl = clear.file.url;
 
             if (!mxcUrl && clear["org.matrix.msc1767.file"]) {
               if (clear["org.matrix.msc1767.file"].url) mxcUrl = clear["org.matrix.msc1767.file"].url;
@@ -354,7 +359,9 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
             if (clear.body) fileName = clear.body;
 
             info = clear.info || {};
-            if (clear.file && !info.encryptedFileInfo) {
+            
+            // ĐỒNG BỘ KHÓA GIẢI MÃ: Đảm bảo trường encryptedFileInfo luôn lấy đúng đối tượng chứa khóa gốc
+            if (clear.file) {
               info.encryptedFileInfo = clear.file;
             } else if (!info.encryptedFileInfo && clear["org.matrix.msc1767.file"]?.file) {
               info.encryptedFileInfo = clear["org.matrix.msc1767.file"].file;
@@ -446,11 +453,10 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
 
   const handlePickImage = async () => {
     try {
-      // 1. Cấu hình ImagePicker không bắt nén quá sâu lúc chọn để tránh blocking luồng lấy file
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.All,
-        quality: 0.6, // Nén ảnh mạnh hơn
-        videoQuality: ImagePicker.UIImagePickerControllerQualityType.Low, // Bắt buộc nén video cực nhỏ để JS mã hoá nổi
+        quality: 0.6,
+        videoQuality: ImagePicker.UIImagePickerControllerQualityType.Low,
         videoExportPreset: ImagePicker.VideoExportPreset.H264_640x480,
       });
 
@@ -468,17 +474,47 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
           info: {
             w: asset.width,
             h: asset.height,
-            duration: asset.duration ? asset.duration * 1000 : undefined // Quy đổi về mili-giây cho video
+            duration: asset.duration ? asset.duration * 1000 : undefined
           }
         };
 
-        // 2. 🌟 BÍ QUYẾT ELEMENT: Sinh ID giao dịch tạm thời (txnId)
         const tempEventId = 'txn_media_' + Date.now();
         const date = new Date();
         const currentTimeStr = date.getHours().toString().padStart(2, '0') + ':' + date.getMinutes().toString().padStart(2, '0');
 
-        // 3. 🌟 OPTIMISTIC MEDIA PRE-CACHE:
-        // Đánh lừa FlatList hiển thị luôn file cục bộ trong máy lên khung chat ngay lập tức!
+        // Sinh ảnh thu nhỏ cục bộ
+        let thumbnailData: any = null;
+        try {
+          if (isVideo) {
+            const { uri: thumbUri } = await VideoThumbnails.getThumbnailAsync(asset.uri, { time: 1000, quality: 0.5 });
+            const thumbInfo = await FileSystem.getInfoAsync(thumbUri) as any;
+            thumbnailData = {
+              uri: thumbUri,
+              name: `thumb_${Date.now()}.jpg`,
+              type: 'image/jpeg',
+              size: thumbInfo.size || 0,
+              info: { w: 800, h: 800 }
+            };
+          } else {
+            const manipResult = await ImageManipulator.manipulateAsync(
+              asset.uri,
+              [{ resize: { width: Math.min(800, asset.width || 800) } }],
+              { compress: 0.5, format: ImageManipulator.SaveFormat.JPEG }
+            );
+            const thumbInfo = await FileSystem.getInfoAsync(manipResult.uri) as any;
+            thumbnailData = {
+              uri: manipResult.uri,
+              name: `thumb_${Date.now()}.jpg`,
+              type: 'image/jpeg',
+              size: thumbInfo.size || 0,
+              info: { w: manipResult.width, h: manipResult.height }
+            };
+          }
+        } catch (e) {
+          console.warn("⚠️ Không thể tạo thumbnail:", e);
+        }
+
+        // Hiển thị trạng thái gửi "lạc quan" lên màn hình của bạn trước
         const optimisticMessage = {
           id: tempEventId,
           sender: getMatrixClient().getUserId(),
@@ -487,42 +523,36 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
           time: currentTimeStr,
           senderName: 'Tôi',
           msgType: isVideo ? 'm.video' : 'm.image',
-          mediaUrl: asset.uri, // 🌟 Gán thẳng URI local (phân vùng phpm/phần cứng máy) vào mediaUrl
+          mediaUrl: asset.uri, 
           mxcUrl: null,
-          status: 'sending', // Bật vòng xoay trạng thái đang tải lên
+          status: 'sending',
           info: fileToUpload.info
         };
 
-        // Đẩy tin nhắn ảnh/video nhảy số lên FlatList ngay trong 1ms
         setMessages(prev => [optimisticMessage, ...prev]);
         flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
 
-        // 4. 🌟 LUỒNG TẢI LÊN NGẦM BẤT ĐỒNG BỘ TUYỆT ĐỐI (Background Thread Task)
-        setTimeout(async () => {
-          try {
-            console.log("📡 Đang tiến hành mã hóa và upload media ngầm dưới nền...");
-            const response = await matrixService.uploadFile(currentActiveRoomId!, fileToUpload);
+        // CHUẨN ĐƠN GIẢN HÓA: Thực hiện tuần tự trực tiếp, loại bỏ hoàn toàn setTimeout vô định hướng
+        try {
+          console.log("📡 Đang mã hóa dữ liệu nhị phân và gửi tuần tự...");
+          const response = await mediaService.uploadFile(currentActiveRoomId!, fileToUpload, thumbnailData);
+          
+          if (response && response.mxcUrl) {
+            const safeId = response.mxcUrl.replace(/[^a-zA-Z0-9]/g, '_');
+            const prefix = isVideo ? 'vid_v3_' : 'img_v3_';
+            const cacheUri = FileSystem.cacheDirectory + prefix + safeId + '.' + fileExtension;
             
-            if (response && response.mxcUrl) {
-              // 5. PRE-CACHE KHÓA MÃ HÓA NGẦM:
-              // Tạo bộ đệm ánh xạ (Mapping) từ MXC URL sang file local có sẵn trong máy.
-              // Việc này giúp chính bạn không cần phải tải lại file mã hóa E2EE đó từ server về nữa
-              const safeId = response.mxcUrl.replace(/[^a-zA-Z0-9]/g, '_');
-              const prefix = isVideo ? 'vid_v3_' : 'img_v3_';
-              const cacheUri = FileSystem.cacheDirectory + prefix + safeId + '.' + fileExtension;
-              
-              // Copy file gốc sang bộ đệm cache mồi của MatrixImage / MatrixVideo
-              await FileSystem.copyAsync({ from: asset.uri, to: cacheUri });
-              console.log("✅ Pre-cached media file to disk:", cacheUri);
-            }
-          } catch (uploadErr) {
-            console.error("❌ Lỗi tải lên file ngầm:", uploadErr);
-            // Bạn có thể update trạng thái item tạm này thành 'failed' nếu muốn
+            await FileSystem.copyAsync({ from: asset.uri, to: cacheUri }).catch(() => {});
+            console.log("✅ Đã hoàn tất gán cache mồi sau upload:", cacheUri);
           }
-        }, 0);
+        } catch (uploadErr) {
+          console.error("❌ Gửi tệp lên server thất bại:", uploadErr);
+          // Cập nhật trạng thái lỗi nếu cần
+          setMessages(prev => prev.map(m => m.id === tempEventId ? { ...m, status: 'failed' } : m));
+        }
       }
     } catch (e) {
-      console.error("Lỗi chọn file:", e);
+      console.error("Lỗi chọn file tổng quan:", e);
     }
     setShowAttachMenu(false);
   };
@@ -561,7 +591,7 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
         flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
 
         setTimeout(() => {
-          matrixService.uploadFile(currentActiveRoomId!, file).catch(err => {
+          mediaService.uploadFile(currentActiveRoomId!, file).catch(err => {
             Alert.alert('Lỗi', 'Không thể gửi tài liệu: ' + err.message);
           });
         }, 0);
@@ -628,7 +658,7 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
         flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
 
         setTimeout(() => {
-          matrixService.uploadFile(currentActiveRoomId, file).then((response: any) => {
+          mediaService.uploadFile(currentActiveRoomId, file).then((response: any) => {
             if (response && response.mxcUrl) {
               const safeId = response.mxcUrl.replace(/[^a-zA-Z0-9]/g, '_');
               const targetCacheUri = FileSystem.cacheDirectory + 'audio_v3_' + safeId + '.m4a';
@@ -1046,10 +1076,10 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
           </View>
         </View>
         <View className="flex-row items-center">
-          <TouchableOpacity onPress={() => matrixService.placeCall(currentActiveRoomId || '', 'voice')} className="mr-6">
+          <TouchableOpacity onPress={() => voipService.placeCall(currentActiveRoomId || '', 'voice')} className="mr-6">
             <Phone size={24} color="#a0a0a0" />
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => matrixService.placeCall(currentActiveRoomId || '', 'video')}>
+          <TouchableOpacity onPress={() => voipService.placeCall(currentActiveRoomId || '', 'video')}>
             <Video size={24} color="#a0a0a0" />
           </TouchableOpacity>
         </View>

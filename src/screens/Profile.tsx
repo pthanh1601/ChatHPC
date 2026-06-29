@@ -3,7 +3,7 @@ import { View, Text, Image, TouchableOpacity, ScrollView, Switch } from 'react-n
 import { Sparkles, Bell, Shield, Palette, LogOut, ChevronRight } from 'lucide-react-native';
 import { AppScreen, HERO_AVATAR } from '../data';
 import { Header } from '../components/Header';
-import { matrixService } from './matrix';
+import { matrixService } from '../services/MatrixService';
 
 export function Profile({ setScreen }: { setScreen: (s: AppScreen) => void }) {
   const [blurIntensity, setBlurIntensity] = useState(0);

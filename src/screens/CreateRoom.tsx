@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator } from 'react-native';
 import { ArrowLeft, Camera, Hash, Type, Lock, Globe, Check, UserPlus } from 'lucide-react-native';
 import { AppScreen } from '../data';
-import { getMatrixClient } from './matrix';
+import { getMatrixClient } from '../services/MatrixService';
 import { Header } from '../components/Header';
 import { SuccessPopup } from '../components/SuccessPopup';
 import { ErrorPopup } from '../components/ErrorPopup';

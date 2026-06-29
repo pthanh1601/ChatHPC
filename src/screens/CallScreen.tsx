@@ -4,7 +4,8 @@ import { RTCView } from 'react-native-webrtc';
 import { Mic, MicOff, Video, VideoOff, PhoneOff, Phone, Minimize2 } from 'lucide-react-native';
 import { BlurView } from 'expo-blur';
 import { Audio } from 'expo-av';
-import { matrixService, getMatrixClient } from './matrix';
+import { getMatrixClient } from '../services/MatrixService';
+import { voipService } from '../services/VoipService';
 import { CONTACTS } from '../data';
 
 const { width, height } = Dimensions.get('window');
@@ -28,12 +29,12 @@ export function CallScreen({ activeCall, onMinimize }: { activeCall: any, onMini
         const onLocalStream = (stream: any) => setLocalStream(stream);
         const onRemoteStream = (stream: any) => setRemoteStream(stream);
 
-        matrixService.on('call.local_stream', onLocalStream);
-        matrixService.on('call.remote_stream', onRemoteStream);
+        voipService.on('call.local_stream', onLocalStream);
+        voipService.on('call.remote_stream', onRemoteStream);
 
         return () => {
-            matrixService.removeListener('call.local_stream', onLocalStream);
-            matrixService.removeListener('call.remote_stream', onRemoteStream);
+            voipService.removeListener('call.local_stream', onLocalStream);
+            voipService.removeListener('call.remote_stream', onRemoteStream);
         };
     }, [activeCall]);
 
@@ -126,7 +127,7 @@ export function CallScreen({ activeCall, onMinimize }: { activeCall: any, onMini
     };
 
     const hangup = () => {
-        matrixService.hangupCall();
+        voipService.hangupCall();
     };
 
     const formatDuration = (seconds: number) => {
@@ -225,7 +226,7 @@ export function CallScreen({ activeCall, onMinimize }: { activeCall: any, onMini
                                 <PhoneOff size={28} color="white" />
                             </TouchableOpacity>
                             <View className="w-4" /> {/* Spacer */}
-                            <TouchableOpacity onPress={() => matrixService.answerCall()} className="w-16 h-16 rounded-full flex items-center justify-center bg-green-500 shadow-lg shadow-green-500/30">
+                            <TouchableOpacity onPress={() => voipService.answerCall()} className="w-16 h-16 rounded-full flex items-center justify-center bg-green-500 shadow-lg shadow-green-500/30">
                                 <Phone size={28} color="white" />
                             </TouchableOpacity>
                         </>

@@ -6,7 +6,7 @@ import { useState, useEffect, useRef } from 'react';
 import { View, PanResponder, LayoutAnimation, Platform, UIManager, BackHandler, Animated, Dimensions, TouchableOpacity, Text, ActivityIndicator } from 'react-native';
 import { Phone, Video, Mic } from 'lucide-react-native';
 import { AppScreen } from './data';
-import { loginToMatrix, startMatrixSync, matrixService, setCurrentActiveRoomId, restoreSession } from './screens/matrix';
+import { loginToMatrix, startMatrixSync, matrixService, setCurrentActiveRoomId, restoreSession } from './services/MatrixService';
 import { setupNotificationCategories, setupNotificationListeners } from './services/notifications';
 import { BottomNav } from './components/BottomNav';
 import { Login } from './screens/Login';

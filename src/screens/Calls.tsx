@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { View, Text, Image, TouchableOpacity, ScrollView } from 'react-native';
 import { Phone, PhoneIncoming, PhoneOutgoing, PhoneMissed, Video } from 'lucide-react-native';
 import { AppScreen, CONTACTS } from '../data';
-import { getMatrixClient } from './matrix';
+import { getMatrixClient } from '../services/MatrixService';
 import { Header } from '../components/Header';
 
 export function Calls({ setScreen }: { setScreen: (s: AppScreen) => void }) {

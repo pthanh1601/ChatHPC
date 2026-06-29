@@ -4,7 +4,7 @@ import * as Notifications from 'expo-notifications';
 import * as TaskManager from 'expo-task-manager';
 import { Platform, Share, Alert, AppState } from 'react-native';
 
-import { currentActiveRoomId, matrixService } from '../screens/matrix';
+import { currentActiveRoomId, matrixService } from './MatrixService';
 
 // Tên Background Task
 const BACKGROUND_NOTIFICATION_TASK = 'BACKGROUND-NOTIFICATION-TASK';

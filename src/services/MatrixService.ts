@@ -8,7 +8,8 @@ import { Buffer } from 'buffer';
 import { EventEmitter } from 'events';
 import { Platform, Alert, Share } from 'react-native';
 import { registerForPushNotificationsAsync, setupNotificationCategories } from '../services/notifications';
-// @ts-ignore
+import { persistentLocalStorage } from './StorageService';
+import { voipService } from './VoipService';
 import OlmInstance from '@matrix-org/olm/olm_legacy.js';
 
 const Olm = OlmInstance.default || OlmInstance;
@@ -28,78 +29,6 @@ let matrixClient = globalStore.__matrixClient;
 // Import LocalStorageCryptoStore để lưu trữ khoá E2EE bền vững trên điện thoại
 const { LocalStorageCryptoStore } = require('matrix-js-sdk/lib/crypto/store/localStorage-crypto-store');
 
-class PersistentLocalStorage {
-    private cache: { [key: string]: string } = {};
-    private filePath: string = FileSystem.documentDirectory + 'matrix_localstorage.json';
-    private saveTimeout: NodeJS.Timeout | null = null;
-    public isInitialized: boolean = false; // Cờ đánh dấu trạng thái nạp file từ đĩa
-
-    async init() {
-        try {
-            const fileInfo = await FileSystem.getInfoAsync(this.filePath);
-            if (fileInfo.exists) {
-                const content = await FileSystem.readAsStringAsync(this.filePath);
-                this.cache = JSON.parse(content);
-                console.log(`📁 Loaded ${Object.keys(this.cache).length} keys from PersistentLocalStorage`);
-            }
-        } catch (e) {
-            console.error("Failed to initialize PersistentLocalStorage:", e);
-            this.cache = {};
-        } finally {
-            this.isInitialized = true;
-        }
-    }
-
-    getItem(key: string): string | null {
-        return this.cache[key] !== undefined ? this.cache[key] : null;
-    }
-
-    setItem(key: string, value: string): void {
-        this.cache[key] = String(value);
-        this.save();
-    }
-
-    removeItem(key: string): void {
-        delete this.cache[key];
-        this.save();
-    }
-
-    key(index: number): string | null {
-        const keys = Object.keys(this.cache);
-        return keys[index] !== undefined ? keys[index] : null;
-    }
-
-    get length(): number {
-        return Object.keys(this.cache).length;
-    }
-
-    private save() {
-        if (this.saveTimeout) {
-            clearTimeout(this.saveTimeout);
-        }
-        this.saveTimeout = setTimeout(async () => {
-            try {
-                await FileSystem.writeAsStringAsync(this.filePath, JSON.stringify(this.cache));
-            } catch (e) {
-                console.error("Failed to save PersistentLocalStorage:", e);
-            }
-        }, 100);
-    }
-
-    async clear() {
-        this.cache = {};
-        if (this.saveTimeout) {
-            clearTimeout(this.saveTimeout);
-        }
-        try {
-            await FileSystem.deleteAsync(this.filePath, { idempotent: true });
-            console.log("📁 Cleared PersistentLocalStorage file.");
-        } catch (e) { }
-    }
-}
-
-export const persistentLocalStorage = new PersistentLocalStorage();
-
 // Lưu trữ ID phòng chat đang active để màn hình ChatSingle có thể sử dụng
 export let currentActiveRoomId: string | null = globalStore.__currentActiveRoomId || null;
 
@@ -108,36 +37,6 @@ export const setCurrentActiveRoomId = (id: string | null) => {
     globalStore.__currentActiveRoomId = id;
 };
 
-// 🌟 HÀM TIỆN ÍCH: Ép chuỗi sang định dạng Unpadded Base64 chuẩn quốc tế của Matrix
-const toUnpaddedBase64 = (wordArray: CryptoJS.lib.WordArray) => {
-    return wordArray.toString(CryptoJS.enc.Base64).replace(/=+$/, '');
-};
-
-function bufferToWordArray(buffer: Buffer): CryptoJS.lib.WordArray {
-    const len = buffer.length;
-    const words: number[] = [];
-    for (let i = 0; i < len; i += 4) {
-        let word = 0;
-        if (i + 0 < len) word |= buffer[i + 0] << 24;
-        if (i + 1 < len) word |= buffer[i + 1] << 16;
-        if (i + 2 < len) word |= buffer[i + 2] << 8;
-        if (i + 3 < len) word |= buffer[i + 3] << 0;
-        words.push(word);
-    }
-    return CryptoJS.lib.WordArray.create(words, len);
-}
-
-function wordArrayToBuffer(wordArray: CryptoJS.lib.WordArray): Buffer {
-    const words = wordArray.words;
-    const sigBytes = wordArray.sigBytes;
-    const buffer = Buffer.alloc(sigBytes);
-    for (let i = 0; i < sigBytes; i++) {
-        const byte = (words[i >>> 2] >>> (24 - (i % 4) * 8)) & 0xff;
-        buffer[i] = byte;
-    }
-    return buffer;
-}
-
 class MatrixService extends EventEmitter {
     public client: any = null;
     public homeserverUrl = MATRIX_BASE_URL;
@@ -145,7 +44,6 @@ class MatrixService extends EventEmitter {
     public tempKey: any = null;
     public isResettingIdentity = false;
     public currentVerificationRequest: any = null;
-    public activeCall: any = null;
 
     constructor() {
         super();
@@ -467,11 +365,11 @@ class MatrixService extends EventEmitter {
 
                 // Lắng nghe cuộc gọi đến (Inbound Call)
                 this.client.on("Call.incoming" as any, (call: any) => {
-                    if (this.activeCall) {
+                    if (voipService.activeCall) {
                         call.hangup('busy');
                         return;
                     }
-                    this._handleNewCall(call, true);
+                    voipService.handleNewCall(call, true);
                 });
             }
         });
@@ -493,68 +391,6 @@ class MatrixService extends EventEmitter {
         await SecureStore.deleteItemAsync('matrix_recovery_key').catch(() => { });
         await persistentLocalStorage.clear().catch(() => { });
     }
-
-    // === XỬ LÝ WEBRTC VOIP === //
-    async placeCall(roomId: string, type: 'voice' | 'video' = 'voice') {
-        if (!this.client) return;
-        const call = this.client.createCall(roomId);
-        if (!call) return;
-        this._handleNewCall(call, false, type);
-    }
-
-    _handleNewCall(call: any, isIncoming: boolean, type: 'voice' | 'video' = 'voice') {
-        this.activeCall = call;
-
-        const updateUI = () => {
-            if (!this.activeCall) {
-                this.emit('call.update', null);
-                return;
-            }
-            const data = {
-                id: call.callId,
-                roomId: call.roomId,
-                type: call.type || type,
-                state: call.state,
-                isIncoming: isIncoming && call.state === 'ringing',
-                localStream: call.localUsermediaStream || call.localStream,
-                remoteStream: call.remoteUsermediaStream || call.remoteStream,
-            };
-            this.emit('call.update', data);
-        };
-
-        call.on('state', (state: string) => {
-            if (state === 'ended') this.activeCall = null;
-            updateUI();
-        });
-
-        call.on('local_stream', (stream: any) => { this.emit('call.local_stream', stream); updateUI(); });
-        call.on('remote_stream', (stream: any) => { this.emit('call.remote_stream', stream); updateUI(); });
-
-        call.on('error', (err: any) => {
-            console.error("Lỗi WebRTC/Call:", err);
-            this.hangupCall();
-        });
-
-        if (!isIncoming) {
-            if (type === 'video') call.placeVideoCall();
-            else call.placeVoiceCall();
-        }
-        updateUI();
-    }
-
-    answerCall() {
-        if (this.activeCall && this.activeCall.state === 'ringing') this.activeCall.answer();
-    }
-
-    hangupCall() {
-        if (this.activeCall) {
-            this.activeCall.hangup();
-            this.activeCall = null;
-            this.emit('call.update', null);
-        }
-    }
-    // ======================== //
-
     _handleVerificationRequest(request: any) {
         this.currentVerificationRequest = request;
         request.on("change", () => {
@@ -631,156 +467,6 @@ class MatrixService extends EventEmitter {
             msgtype: "m.notice"
         });
     }
-
-    // --- THAY THẾ HOÀN TOÀN HÀM uploadFile TRONG MATRIX.TS ---
-    async uploadFile(roomId: string, file: { uri: string, type: string, name: string, size?: number, info?: any }) {
-        if (!this.client) return null;
-
-        const isEncrypted = this.client.isRoomEncrypted(roomId);
-        const canEncrypt = this.client.isCryptoEnabled();
-
-        let fileUriToUpload = file.uri;
-        let uploadMimeType = file.type;
-        let encryptionInfo: any = null;
-        let tempEncryptedUri: string | null = null;
-
-        try {
-            if (isEncrypted && canEncrypt) {
-                console.log("🔒 PROGRESSIVE: Đang băm tiến trình mã hóa file nhị phân sạch...");
-                const key = CryptoJS.lib.WordArray.random(32);
-                
-                // 🌟 LỖI BẢO MẬT MATRIX: Nửa sau của IV (64-bit cuối) BẮT BUỘC phải là 0
-                const randomWords = CryptoJS.lib.WordArray.random(8).words; // Lấy 8 bytes đầu
-                const iv = CryptoJS.lib.WordArray.create([randomWords[0], randomWords[1], 0, 0], 16);
-
-                const encryptor = CryptoJS.algo.AES.createEncryptor(key, {
-                    iv: iv,
-                    mode: CryptoJS.mode.CTR,
-                    padding: CryptoJS.pad.NoPadding
-                });
-
-                const hasher = CryptoJS.algo.SHA256.create();
-                const fileInfo = (await FileSystem.getInfoAsync(file.uri)) as any;
-                const fileSize = fileInfo.size || 0;
-                
-                // 🌟 GIẢI PHÁP CHỐNG NÓNG MÁY VÀ CRASH RAM:
-                // Không dùng mảng accumulatedWords.concat() vì nó nhồi hàng triệu object vào RAM gây tràn!
-                // Thay vào đó ta nối trực tiếp chuỗi String. Chọn chunkSize = 960000 vì nó chia hết cho 16 và 3.
-                const chunkSize = 960000;
-                let position = 0;
-                let finalBase64Data = '';
-
-                while (position < fileSize) {
-                    const length = Math.min(chunkSize, fileSize - position);
-                    const chunkBase64 = await FileSystem.readAsStringAsync(file.uri, {
-                        encoding: FileSystem.EncodingType.Base64,
-                        position,
-                        length
-                    });
-
-                    const chunkWordArray = CryptoJS.enc.Base64.parse(chunkBase64.replace(/\s+/g, ''));
-                    const encryptedChunk = encryptor.process(chunkWordArray);
-                    
-                    if (encryptedChunk && encryptedChunk.sigBytes > 0) {
-                        hasher.update(encryptedChunk);
-                        finalBase64Data += CryptoJS.enc.Base64.stringify(encryptedChunk);
-                    }
-
-                    position += length;
-                    await new Promise<void>(resolve => setTimeout(resolve, 5)); // Cho UI nghỉ ngơi để máy không bị nóng
-                }
-
-                const finalChunk = encryptor.finalize();
-                if (finalChunk && finalChunk.sigBytes > 0) {
-                    hasher.update(finalChunk);
-                    finalBase64Data += CryptoJS.enc.Base64.stringify(finalChunk);
-                }
-
-                const fileExtension = file.name.split('.').pop() || 'mp4';
-                tempEncryptedUri = FileSystem.cacheDirectory + 'enc_temp_' + Date.now() + '.' + fileExtension;
-
-                await FileSystem.writeAsStringAsync(tempEncryptedUri, finalBase64Data, {
-                    encoding: FileSystem.EncodingType.Base64
-                });
-
-                // 🌟 SỰ KHÁC BIỆT CHẾT NGƯỜI CỦA MATRIX SPEC:
-                // - iv và sha256 DÙNG Base64 thông thường (CHỨA + và /)
-                // - NHƯNG key.k lại thuộc chuẩn JWK, BẮT BUỘC DÙNG Base64URL (THAY + BẰNG - VÀ / BẰNG _)
-                // Việc bạn giữ nguyên + và / cho key.k khiến Element iOS (parse JWK rất khắt khe) đâm ra lỗi Domain 0.
-                const keyBase64Url = key.toString(CryptoJS.enc.Base64)
-                    .replace(/=+$/, '')
-                    .replace(/\+/g, '-')
-                    .replace(/\//g, '_');
-                    
-                const ivBase64Unpadded = toUnpaddedBase64(iv);
-                const sha256HashUnpadded = hasher.finalize().toString(CryptoJS.enc.Base64).replace(/=+$/, '');
-
-                encryptionInfo = {
-                    v: "v2",
-                    key: { 
-                        alg: "A256CTR", 
-                        ext: true, 
-                        k: keyBase64Url, // BẮT BUỘC LÀ Base64URL
-                        key_ops: ["encrypt", "decrypt"], 
-                        kty: "oct" 
-                    },
-                    iv: ivBase64Unpadded,
-                    hashes: { sha256: sha256HashUnpadded }
-                };
-
-                fileUriToUpload = tempEncryptedUri;
-                uploadMimeType = "application/octet-stream";
-            }
-
-            // Stream Upload Native từ ổ cứng lên Server Matrix
-            const uploadUrl = `${this.client.getHomeserverUrl()}/_matrix/media/v3/upload?filename=${encodeURIComponent(file.name)}`;
-            const uploadResult = await FileSystem.uploadAsync(uploadUrl, fileUriToUpload, {
-                headers: { 'Authorization': `Bearer ${this.client.getAccessToken()}`, 'Content-Type': uploadMimeType },
-                httpMethod: 'POST',
-                uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT
-            });
-
-            if (uploadResult.status !== 200) throw new Error(`Upload failed with status ${uploadResult.status}`);
-
-            const uploadResponse = JSON.parse(uploadResult.body);
-            const content_uri = uploadResponse.content_uri;
-
-            let msgtype = 'm.file';
-            if (file.type?.startsWith('image/')) msgtype = 'm.image';
-            else if (file.type?.startsWith('audio/')) msgtype = 'm.audio';
-            else if (file.type?.startsWith('video/')) msgtype = 'm.video';
-
-            const content: any = {
-                body: file.name || "Attachment",
-                msgtype: msgtype,
-                info: { mimetype: file.type, size: file.size, ...file.info }
-            };
-
-            if (isEncrypted && canEncrypt && encryptionInfo) {
-                encryptionInfo.url = content_uri;
-                content.file = encryptionInfo;
-            } else {
-                content.url = content_uri;
-            }
-
-            // Đồng bộ cache mồi mượt mà cho người gửi
-            try {
-                const safeId = content_uri.replace(/[^a-zA-Z0-9]/g, '_');
-                const fileExtension = file.name.split('.').pop() || 'mp4';
-                const prefix = msgtype === 'm.video' ? 'vid_v3_' : 'img_v3_';
-                const cacheUri = FileSystem.cacheDirectory + prefix + safeId + '.' + fileExtension;
-                await FileSystem.copyAsync({ from: file.uri, to: cacheUri });
-            } catch (cacheErr) { }
-
-            const sendResponse = await this._safeSendEvent(roomId, "m.room.message", content);
-            return { ...sendResponse, mxcUrl: content_uri };
-        } finally {
-            if (tempEncryptedUri) {
-                await FileSystem.deleteAsync(tempEncryptedUri, { idempotent: true }).catch(() => {});
-            }
-        }
-    }
-
     async searchUsers(term: string) {
         if (!this.client || !term) return [];
         try {
@@ -988,76 +674,6 @@ class MatrixService extends EventEmitter {
         this.client.sendTyping(roomId, isTyping, 30000);
     }
 }
-
-// --- THAY THẾ HOÀN TOÀN HÀM decryptMatrixFile Ở CUỐI FILE MATRIX.TS ---
-export async function decryptMatrixFile(file: any, targetUri?: string) {
-    const client = getMatrixClient();
-    if (!client || !file || !file.url) throw new Error("File info is missing.");
-
-    const outputUri = targetUri || (FileSystem.cacheDirectory + 'dec_temp_' + Date.now());
-
-    try {
-        let httpUrl = client.mxcUrlToHttp(file.url);
-        if (httpUrl) {
-            httpUrl = httpUrl.replace(/\/_matrix\/media\/(r0|v3)\/(download|thumbnail)\//, '/_matrix/client/v1/media/$2/');
-        }
-
-        const tempUri = FileSystem.cacheDirectory + 'enc_' + Date.now();
-        const downloadResult = await FileSystem.downloadAsync(httpUrl, tempUri, {
-            headers: client?.getAccessToken() ? { Authorization: `Bearer ${client.getAccessToken()}` } : {}
-        });
-
-        if (downloadResult.status !== 200) throw new Error(`HTTP ${downloadResult.status}`);
-
-        const keyBase64 = file.key.k.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - (file.key.k.length % 4)) % 4);
-        const ivBase64 = file.iv.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - (file.iv.length % 4)) % 4);
-
-        const key = CryptoJS.enc.Base64.parse(keyBase64);
-        const iv = CryptoJS.enc.Base64.parse(ivBase64);
-
-        const decryptor = CryptoJS.algo.AES.createDecryptor(key, { iv: iv, mode: CryptoJS.mode.CTR, padding: CryptoJS.pad.NoPadding });
-        const fileInfo = (await FileSystem.getInfoAsync(downloadResult.uri)) as any;
-        const fileSize = fileInfo.size || 0;
-        const chunkSize = 960000;
-        let position = 0;
-        let finalBase64Data = '';
-
-        const checkOutput = await FileSystem.getInfoAsync(outputUri);
-        if (checkOutput.exists) await FileSystem.deleteAsync(outputUri, { idempotent: true });
-
-        while (position < fileSize) {
-            const length = Math.min(chunkSize, fileSize - position);
-            const chunkBase64 = await FileSystem.readAsStringAsync(downloadResult.uri, { encoding: FileSystem.EncodingType.Base64, position, length });
-
-            const ciphertextChunk = CryptoJS.enc.Base64.parse(chunkBase64.replace(/\s+/g, ''));
-            const decryptedChunk = decryptor.process(ciphertextChunk);
-            
-            if (decryptedChunk && decryptedChunk.sigBytes > 0) {
-                finalBase64Data += CryptoJS.enc.Base64.stringify(decryptedChunk);
-            }
-
-            position += length;
-            await new Promise<void>(resolve => setTimeout(resolve, 5));
-        }
-
-        const finalChunk = decryptor.finalize();
-        if (finalChunk && finalChunk.sigBytes > 0) {
-            finalBase64Data += CryptoJS.enc.Base64.stringify(finalChunk);
-        }
-
-        await FileSystem.writeAsStringAsync(outputUri, finalBase64Data, {
-            encoding: FileSystem.EncodingType.Base64
-        });
-
-        // Dọn dẹp tệp tạm download mã hóa để giải phóng dung lượng ổ cứng
-        await FileSystem.deleteAsync(downloadResult.uri, { idempotent: true }).catch(() => { });
-        return outputUri;
-    } catch (e: any) {
-        console.error("❌ Lỗi luồng giải mã nhận file media:", e);
-        throw e;
-    }
-}
-
 export const matrixService = new MatrixService();
 
 // Export các hàm cũ trỏ qua MatrixService để giữ Backward Compatibility cho các màn hình khác

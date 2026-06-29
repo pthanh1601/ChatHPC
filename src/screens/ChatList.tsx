@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { View, Text, Image, TouchableOpacity, ScrollView, LayoutAnimation, Platform, UIManager } from 'react-native';
 import { Plus, CheckCheck, MessageSquarePlus } from 'lucide-react-native';
 import { AppScreen, CONTACTS } from '../data';
-import { getMatrixClient, setCurrentActiveRoomId, persistentLocalStorage } from './matrix';
+import { getMatrixClient, setCurrentActiveRoomId } from '../services/MatrixService';
+import { persistentLocalStorage } from '../services/StorageService';
 import { Header } from '../components/Header';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
