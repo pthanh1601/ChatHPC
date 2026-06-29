@@ -113,9 +113,13 @@ const MatrixImage = ({ url, client, info: fileInfo, eventId, mxcUrl, fileName }:
           return;
         }
 
-        if (fileInfo?.encryptedFileInfo) {
+        // Tối ưu hóa: Ưu tiên giải mã thumbnail_file (rất nhẹ) để hiển thị tức thì trên luồng chat
+        // Thay vì phải giải mã file gốc vài MB bằng JS Fallback làm treo app vài giây.
+        const targetEncryptInfo = fileInfo?.thumbnail_file || fileInfo?.encryptedFileInfo;
+        
+        if (targetEncryptInfo) {
           try {
-            await decryptMatrixFile(fileInfo.encryptedFileInfo, fileUri);
+            await decryptMatrixFile(targetEncryptInfo, fileUri);
             if (isMounted) setLocalUri(fileUri);
           } catch (decryptError: any) {
             console.error("Lỗi giải mã hình ảnh:", decryptError);
@@ -124,7 +128,12 @@ const MatrixImage = ({ url, client, info: fileInfo, eventId, mxcUrl, fileName }:
           return;
         }
 
-        const downloadResult = await FileSystem.downloadAsync(url, fileUri, {
+        const targetDownloadUrl = fileInfo?.thumbnail_url || fileInfo?.thumbnail_info?.url || url;
+        let finalHttpUrl = targetDownloadUrl.startsWith('mxc://') ? client.mxcUrlToHttp(targetDownloadUrl) : targetDownloadUrl;
+        if (!finalHttpUrl) throw new Error("Không thể phân giải mã URL từ server");
+        finalHttpUrl = finalHttpUrl.replace(/\/_matrix\/media\/(r0|v3)\/(download|thumbnail)\//, '/_matrix/client/v1/media/$2/');
+
+        const downloadResult = await FileSystem.downloadAsync(finalHttpUrl, fileUri, {
           headers: client?.getAccessToken() ? { Authorization: `Bearer ${client.getAccessToken()}` } : {}
         });
 
