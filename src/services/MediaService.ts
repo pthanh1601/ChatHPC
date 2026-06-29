@@ -230,31 +230,21 @@ class MediaService {
                 const iv = CryptoJS.enc.Base64.parse(ivBase64);
 
                 const decryptor = CryptoJS.algo.AES.createDecryptor(key, { iv: iv, mode: CryptoJS.mode.CTR, padding: CryptoJS.pad.NoPadding });
-                const fileInfo = (await FileSystem.getInfoAsync(downloadResult.uri)) as any;
-                const fileSize = fileInfo.size || 0;
                 
-                const CHUNK_SIZE_BYTES = 307200;
-                let position = 0;
-                let finalBase64Data = '';
-
-                while (position < fileSize) {
-                    const lengthToRead = Math.min(CHUNK_SIZE_BYTES, fileSize - position);
-                    const chunkBase64 = await FileSystem.readAsStringAsync(downloadResult.uri, { encoding: FileSystem.EncodingType.Base64, position, length: lengthToRead });
-                    const ciphertextChunk = CryptoJS.enc.Base64.parse(chunkBase64.replace(/\s+/g, ''));
-                    const decryptedChunk = decryptor.process(ciphertextChunk);
-
-                    if (decryptedChunk && decryptedChunk.sigBytes > 0) {
-                        finalBase64Data += CryptoJS.enc.Base64.stringify(decryptedChunk);
-                    }
-                    position += lengthToRead;
-                    await new Promise<void>(resolve => setTimeout(resolve, 2));
-                }
-
+                // Giải mã nguyên khối (One-pass) tương tự như mã hóa để tránh rủi ro đứt gãy
+                const b64Data = await FileSystem.readAsStringAsync(downloadResult.uri, { encoding: FileSystem.EncodingType.Base64 });
+                const ciphertextWordArray = CryptoJS.enc.Base64.parse(b64Data.replace(/[^A-Za-z0-9+/=]/g, ''));
+                
+                const decryptedChunk = decryptor.process(ciphertextWordArray);
                 const finalChunk = decryptor.finalize();
+
+                const finalWordArray = decryptedChunk.clone();
                 if (finalChunk && finalChunk.sigBytes > 0) {
-                    finalBase64Data += CryptoJS.enc.Base64.stringify(finalChunk);
+                    finalWordArray.concat(finalChunk);
                 }
 
+                const finalBase64Data = finalWordArray.toString(CryptoJS.enc.Base64);
+                
                 await FileSystem.writeAsStringAsync(outputUri, finalBase64Data, { encoding: FileSystem.EncodingType.Base64 });
             }
 
