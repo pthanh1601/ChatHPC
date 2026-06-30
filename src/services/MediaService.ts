@@ -1,4 +1,5 @@
 import * as FileSystem from 'expo-file-system';
+import RNFS from 'react-native-fs';
 import CryptoJS from 'crypto-js';
 import { Buffer } from 'buffer';
 import { matrixService, getMatrixClient } from './MatrixService';
@@ -46,22 +47,42 @@ class MediaService {
                 }
 
                 const fileExtension = file.name.split('.').pop() || 'tmp';
-                tempEncryptedUri = FileSystem.cacheDirectory + 'enc_' + Date.now() + '.' + fileExtension;
+                // Sử dụng RNFS Caches Directory (không có file:// prefix) để write/append
+                tempEncryptedUri = RNFS.CachesDirectoryPath + '/enc_' + Date.now() + '.' + fileExtension;
+                const cleanUri = file.uri.startsWith('file://') ? file.uri.substring(7) : file.uri;
+                const CHUNK_SIZE = 1024 * 1024; // 1MB chunks
 
                 if (nativeCrypto) {
-                    console.log(`🔒 [Native Mode] Mã hóa file nguyên khối bằng Quick-Crypto: ${file.name}`);
-                    const b64Data = (await FileSystem.readAsStringAsync(file.uri, { encoding: FileSystem.EncodingType.Base64 })) as string;
-                    const plaintextBuffer = Buffer.from(b64Data, 'base64');
-
-                    const key = nativeCrypto.randomBytes(32);
-                    const iv = nativeCrypto.randomBytes(16);
-                    iv[8] &= 0x7f;
+                    console.log(`🔒 [Native Mode] Mã hóa file PHÂN MẢNH (Streaming) bằng Quick-Crypto: ${file.name}`);
+                    
+                    const key = Buffer.from(nativeCrypto.randomBytes(32));
+                    const iv = Buffer.from(nativeCrypto.randomBytes(16));
+                    // Chuẩn Matrix (MSC1767): 8 byte cuối (64-bit) của IV phải bằng 0 để dùng làm Counter
+                    iv.fill(0, 8, 16);
 
                     const cipher = nativeCrypto.createCipheriv('aes-256-ctr', key, iv);
-                    const ciphertext = Buffer.concat([cipher.update(plaintextBuffer), cipher.final()]);
-                    const sha256Hash = nativeCrypto.createHash('sha256').update(ciphertext).digest('base64');
+                    const sha256 = nativeCrypto.createHash('sha256');
                     
-                    await FileSystem.writeAsStringAsync(tempEncryptedUri, ciphertext.toString('base64'), { encoding: FileSystem.EncodingType.Base64 });
+                    let position = 0;
+                    while (position < finalSize) {
+                        const lengthToRead = Math.min(CHUNK_SIZE, finalSize - position);
+                        const b64Chunk = await RNFS.read(cleanUri, lengthToRead, position, 'base64');
+                        const chunkBuffer = Buffer.from(b64Chunk, 'base64');
+                        
+                        const encryptedBuffer = Buffer.from(cipher.update(chunkBuffer));
+                        sha256.update(encryptedBuffer);
+                        
+                        await RNFS.appendFile(tempEncryptedUri, encryptedBuffer.toString('base64'), 'base64');
+                        position += lengthToRead;
+                    }
+                    
+                    const finalBuffer = Buffer.from(cipher.final());
+                    if (finalBuffer.length > 0) {
+                        sha256.update(finalBuffer);
+                        await RNFS.appendFile(tempEncryptedUri, finalBuffer.toString('base64'), 'base64');
+                    }
+                    
+                    const sha256Hash = sha256.digest('base64');
 
                     encryptionInfo = {
                         v: "v2",
@@ -71,35 +92,39 @@ class MediaService {
                         hashes: { sha256: sha256Hash }
                     };
                 } else {
-                    console.log(`🔒 [JS Fallback Mode] Mã hóa file bằng crypto-js: ${file.name}`);
+                    console.log(`🔒 [JS Fallback Mode] Mã hóa file PHÂN MẢNH bằng crypto-js: ${file.name}`);
                     const key = CryptoJS.lib.WordArray.random(32);
                     const iv = CryptoJS.lib.WordArray.random(16);
                     iv.words[2] &= 0x7FFFFFFF; 
-                    iv.words[3] = 0; // Tránh tràn đếm của CryptoJS
+                    iv.words[3] = 0; // Tránh tràn đếm
                     
                     const encryptor = CryptoJS.algo.AES.createEncryptor(key, { iv: iv, mode: CryptoJS.mode.CTR, padding: CryptoJS.pad.NoPadding });
+                    const sha256 = CryptoJS.algo.SHA256.create();
                     
-                    // Xử lý nguyên khối thay vì chunk để tránh gãy dữ liệu
-                    const b64Data = await FileSystem.readAsStringAsync(file.uri, { encoding: FileSystem.EncodingType.Base64 });
-                    const plaintextWordArray = CryptoJS.enc.Base64.parse(b64Data.replace(/[^A-Za-z0-9+/=]/g, ''));
-                    
-                    const encryptedChunk = encryptor.process(plaintextWordArray);
-                    const finalChunk = encryptor.finalize();
-                    
-                    // SỬA LỖI TRƯỚC ĐÓ: KHÔNG ĐƯỢC NỐI CHUỖI BASE64 VỚI NHAU VÌ SẼ BỊ LỖI PADDING (==) GIỮA CHUỖI
-                    // BẮT BUỘC PHẢI NỐI WORDARRAY VỚI NHAU RỒI MỚI TOSTRING MỘT LẦN!
-                    const finalWordArray = encryptedChunk.clone();
-                    if (finalChunk && finalChunk.sigBytes > 0) {
-                        finalWordArray.concat(finalChunk);
+                    let position = 0;
+                    while (position < finalSize) {
+                        const lengthToRead = Math.min(CHUNK_SIZE, finalSize - position);
+                        const b64Chunk = await RNFS.read(cleanUri, lengthToRead, position, 'base64');
+                        const plaintextWordArray = CryptoJS.enc.Base64.parse(b64Chunk.replace(/[^A-Za-z0-9+/=]/g, ''));
+                        
+                        const encryptedChunk = encryptor.process(plaintextWordArray);
+                        
+                        if (encryptedChunk && encryptedChunk.sigBytes > 0) {
+                            sha256.update(encryptedChunk);
+                            const chunkBase64 = encryptedChunk.toString(CryptoJS.enc.Base64);
+                            await RNFS.appendFile(tempEncryptedUri, chunkBase64, 'base64');
+                        }
+                        position += lengthToRead;
                     }
                     
-                    const finalEncryptedBase64 = finalWordArray.toString(CryptoJS.enc.Base64);
+                    const finalChunk = encryptor.finalize();
+                    if (finalChunk && finalChunk.sigBytes > 0) {
+                        sha256.update(finalChunk);
+                        const finalBase64 = finalChunk.toString(CryptoJS.enc.Base64);
+                        await RNFS.appendFile(tempEncryptedUri, finalBase64, 'base64');
+                    }
                     
-                    const sha256 = CryptoJS.algo.SHA256.create();
-                    sha256.update(finalWordArray);
                     const hashBase64 = sha256.finalize().toString(CryptoJS.enc.Base64); // CHUẨN CÓ DẤU =
-                    
-                    await FileSystem.writeAsStringAsync(tempEncryptedUri, finalEncryptedBase64, { encoding: FileSystem.EncodingType.Base64 });
                     
                     encryptionInfo = {
                         v: "v2",
@@ -109,7 +134,7 @@ class MediaService {
                     };
                 }
                 
-                fileUriToUpload = tempEncryptedUri;
+                fileUriToUpload = 'file://' + tempEncryptedUri;
                 uploadMimeType = "application/octet-stream";
             }
 

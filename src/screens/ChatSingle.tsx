@@ -464,9 +464,9 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.All,
-        quality: 0.6,
-        videoQuality: ImagePicker.UIImagePickerControllerQualityType.Low,
-        videoExportPreset: ImagePicker.VideoExportPreset.H264_640x480,
+        quality: 0.8, // Nén ảnh 80%
+        videoQuality: ImagePicker.UIImagePickerControllerQualityType.Medium,
+        videoExportPreset: ImagePicker.VideoExportPreset.H264_960x540, // Độ phân giải 540p (qHD) để lọt qua giới hạn 10MB của Server
       });
 
       if (!result.canceled && result.assets[0]) {
