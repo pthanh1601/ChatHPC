@@ -3,12 +3,27 @@ import RNFS from 'react-native-fs';
 import CryptoJS from 'crypto-js';
 import { Buffer } from 'buffer';
 import { matrixService, getMatrixClient } from './MatrixService';
+import { Platform } from 'react-native';
 
+// Try to load NativeMatrixCryptoModule (Swift for iOS)
+let NativeMatrixCrypto: any = null;
+if (Platform.OS === 'ios') {
+    try {
+        NativeMatrixCrypto = require('../../modules/native-matrix-crypto/src/NativeMatrixCryptoModule').default;
+    } catch (e) {
+        console.log('NativeMatrixCryptoModule not available:', e);
+    }
+}
+
+// Fallback: Thử lấy thư viện Quick Crypto
 let nativeCrypto: any = null;
 try {
-    nativeCrypto = require('react-native-quick-crypto').default || require('react-native-quick-crypto');
+    nativeCrypto = require('react-native-quick-crypto');
+    if (nativeCrypto && nativeCrypto.default) {
+        nativeCrypto = nativeCrypto.default;
+    }
 } catch (e) {
-    console.log("⚠️ Không tìm thấy Native Crypto, sẽ dùng Fallback JS (crypto-js)");
+    console.log('QuickCrypto not available:', e);
 }
 
 const toBase64UrlUnpaddedBuffer = (buffer: Buffer) => {
@@ -47,12 +62,21 @@ class MediaService {
                 }
 
                 const fileExtension = file.name.split('.').pop() || 'tmp';
-                // Sử dụng RNFS Caches Directory (không có file:// prefix) để write/append
                 tempEncryptedUri = RNFS.CachesDirectoryPath + '/enc_' + Date.now() + '.' + fileExtension;
                 const cleanUri = file.uri.startsWith('file://') ? file.uri.substring(7) : file.uri;
                 const CHUNK_SIZE = 1024 * 1024; // 1MB chunks
 
-                if (nativeCrypto) {
+                if (NativeMatrixCrypto) {
+                    console.log(`🔒 [Swift Native Mode] Mã hóa tốc độ cao bằng CommonCrypto: ${file.name}`);
+                    const nativeResult = await NativeMatrixCrypto.encryptFile(cleanUri, tempEncryptedUri);
+                    
+                    encryptionInfo = {
+                        v: "v2",
+                        key: { alg: "A256CTR", ext: true, k: nativeResult.key, key_ops: ["encrypt", "decrypt"], kty: "oct" },
+                        iv: nativeResult.iv,
+                        hashes: { sha256: nativeResult.sha256 }
+                    };
+                } else if (nativeCrypto) {
                     console.log(`🔒 [Native Mode] Mã hóa file PHÂN MẢNH (Streaming) bằng Quick-Crypto: ${file.name}`);
                     
                     const key = Buffer.from(nativeCrypto.randomBytes(32));
