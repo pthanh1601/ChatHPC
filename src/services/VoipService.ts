@@ -28,11 +28,13 @@ class VoipService extends EventEmitter {
                 isIncoming: isIncoming && call.state === 'ringing',
                 localStream: call.localUsermediaStream || call.localStream,
                 remoteStream: call.remoteUsermediaStream || call.remoteStream,
+                startTime: call.startTime,
             };
             this.emit('call.update', data);
         };
 
         call.on('state', (state: string) => {
+            if (state === 'connected' && !call.startTime) call.startTime = Date.now();
             if (state === 'ended') this.activeCall = null;
             updateUI();
         });

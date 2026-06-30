@@ -53,18 +53,18 @@ export function Profile({ setScreen }: { setScreen: (s: AppScreen) => void }) {
             <View className="flex-row items-center justify-between p-4 border-b border-white/5">
               <View className="flex-row items-center">
                 <View className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center mr-4">
-                  <Sparkles size={20} color="#dcb8ff" />
+                  <Sparkles size={20} color="#0DBD8B" />
                 </View>
                 <Text className="text-base text-white">Glow Intensity</Text>
               </View>
-              <Switch value={true} trackColor={{ false: "#767577", true: "#dcb8ff" }} thumbColor={"#f4f3f4"} />
+              <Switch value={true} trackColor={{ false: "#767577", true: "#0DBD8B" }} thumbColor={"#f4f3f4"} />
             </View>
 
             {/* Notifications */}
             <TouchableOpacity className="w-full flex-row items-center justify-between p-4 border-b border-white/5">
               <View className="flex-row items-center">
                 <View className="w-10 h-10 rounded-lg bg-secondary/10 flex items-center justify-center mr-4">
-                  <Bell size={20} color="#00fbfb" />
+                  <Bell size={20} color="#03B381" />
                 </View>
                 <Text className="text-base text-white">Notifications</Text>
               </View>
@@ -86,7 +86,7 @@ export function Profile({ setScreen }: { setScreen: (s: AppScreen) => void }) {
             <TouchableOpacity className="w-full flex-row items-center justify-between p-4 border-b border-white/5">
               <View className="flex-row items-center">
                 <View className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center mr-4">
-                  <Palette size={20} color="#dcb8ff" />
+                  <Palette size={20} color="#0DBD8B" />
                 </View>
                 <Text className="text-base text-white">Appearance</Text>
               </View>

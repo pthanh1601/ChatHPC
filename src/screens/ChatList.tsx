@@ -245,7 +245,7 @@ export function ChatList({ setScreen }: { setScreen: (s: AppScreen) => void }) {
                     onPress={() => handleAcceptInvite(chat.id)}
                     className="flex-1 py-2.5 rounded-xl bg-primary items-center justify-center shadow-lg shadow-primary/20"
                   >
-                    <Text className="text-[#1a1f2e] font-bold text-sm tracking-wide">Tham gia</Text>
+                    <Text className="text-[#22262E] font-bold text-sm tracking-wide">Tham gia</Text>
                   </TouchableOpacity>
                 </View>
               )}
@@ -259,7 +259,7 @@ export function ChatList({ setScreen }: { setScreen: (s: AppScreen) => void }) {
       </ScrollView>
 
       <TouchableOpacity onPress={() => setScreen('chat_group')} className="absolute bottom-28 right-6 w-14 h-14 bg-primary rounded-2xl flex items-center justify-center z-40 shadow-xl">
-        <MessageSquarePlus size={28} color="#1a1f2e" />
+        <MessageSquarePlus size={28} color="#22262E" />
       </TouchableOpacity>
     </View>
   );

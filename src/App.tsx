@@ -5,9 +5,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { View, PanResponder, LayoutAnimation, Platform, UIManager, BackHandler, Animated, Dimensions, TouchableOpacity, Text, ActivityIndicator } from 'react-native';
 import { Phone, Video, Mic } from 'lucide-react-native';
+import { RTCView } from 'react-native-webrtc';
 import { AppScreen } from './data';
 import { loginToMatrix, startMatrixSync, matrixService, setCurrentActiveRoomId, restoreSession } from './services/MatrixService';
 import { setupNotificationCategories, setupNotificationListeners } from './services/notifications';
+import { voipService } from './services/VoipService';
 import { BottomNav } from './components/BottomNav';
 import { Login } from './screens/Login';
 import { ChatList } from './screens/ChatList';
@@ -174,9 +176,9 @@ export default function App() {
       setActiveCall(callData);
       if (!callData) setIsCallMinimized(false);
     };
-    matrixService.on('call.update', onCallUpdate);
+    voipService.on('call.update', onCallUpdate);
     return () => {
-      matrixService.removeListener('call.update', onCallUpdate);
+      voipService.removeListener('call.update', onCallUpdate);
     };
   }, []);
 
@@ -222,7 +224,7 @@ export default function App() {
       <View className="flex-1 bg-background justify-center items-center px-8">
         <View className="items-center mb-8">
           <View className="w-20 h-20 bg-primary/20 rounded-3xl flex items-center justify-center border border-primary/40 mb-6 shadow-xl">
-            <ActivityIndicator size="large" color="#dcb8ff" />
+            <ActivityIndicator size="large" color="#0DBD8B" />
           </View>
           <Text className="text-4xl font-extrabold text-white tracking-widest uppercase">Luminous</Text>
           <Text className="text-sm text-secondary/80 mt-2 font-medium tracking-widest uppercase">Restoring Session...</Text>
@@ -262,7 +264,7 @@ export default function App() {
             {delayedDetailScreen === 'create_room' && <CreateRoom setScreen={handleSetScreen} />}
             {!delayedDetailScreen && (
               <View className="flex-1 bg-background items-center justify-center">
-                <ActivityIndicator size="small" color="#dcb8ff" />
+                <ActivityIndicator size="small" color="#0DBD8B" />
               </View>
             )}
           </SafeScreen>
@@ -288,15 +290,34 @@ export default function App() {
         >
           <TouchableOpacity 
             onPress={() => setIsCallMinimized(false)}
-            className="bg-card rounded-full flex-row items-center justify-center shadow-2xl border border-white/20 px-3"
-            style={{ height: 56, minWidth: 56 }}
+            className={`bg-card flex-row items-center justify-center shadow-2xl border border-white/20 overflow-hidden ${activeCall.type === 'video' && activeCall.remoteStream ? 'rounded-2xl' : 'rounded-full px-3'}`}
+            style={{ 
+              height: (activeCall.type === 'video' && activeCall.remoteStream) ? 240 : 56, 
+              width: (activeCall.type === 'video' && activeCall.remoteStream) ? 160 : undefined,
+              minWidth: 56 
+            }}
           >
-            {(activeCall.state === 'connected' || activeCall.state === 'connecting') && callDuration > 0 ? (
-              <Text className="text-white font-bold mx-1">{formatBubbleDuration(callDuration)}</Text>
+            {activeCall.type === 'video' && activeCall.remoteStream ? (
+                <View className="absolute w-full h-full bg-black">
+                    <RTCView
+                        streamURL={activeCall.remoteStream.toURL()}
+                        style={{ width: '100%', height: '100%' }}
+                        objectFit="cover"
+                        zOrder={2}
+                    />
+                    <View className="absolute bottom-2 w-full items-center">
+                        <Text className="text-white text-xs font-bold px-2 py-0.5 bg-black/60 rounded overflow-hidden">{formatBubbleDuration(callDuration)}</Text>
+                    </View>
+                </View>
             ) : (
-              activeCall.type === 'video' ? <Video size={24} color="#00fbfb" /> : <Phone size={24} color="#dcb8ff" />
+                <View className="items-center justify-center px-2">
+                    {(activeCall.state === 'connected' || activeCall.state === 'connecting') && callDuration > 0 ? (
+                    <Text className="text-white font-bold mb-1">{formatBubbleDuration(callDuration)}</Text>
+                    ) : null}
+                    {activeCall.type === 'video' ? <Video size={24} color="#03B381" /> : <Phone size={24} color="#0DBD8B" />}
+                </View>
             )}
-            <View className="absolute top-0 right-0 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-background" />
+            <View className="absolute -top-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-background" />
           </TouchableOpacity>
         </Animated.View>
       )}

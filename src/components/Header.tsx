@@ -47,7 +47,7 @@ export function Header({ title, blurIntensity, setScreen, children, rightCompone
                       className="w-10 h-10 bg-surface/50 rounded-full flex items-center justify-center border border-white/10"
                       onPress={() => setModalVisible(true)}
                     >
-                      <Plus size={22} color="#dcb8ff" />
+                      <Plus size={22} color="#0DBD8B" />
                     </TouchableOpacity>
                   )}
                 </View>
@@ -88,7 +88,7 @@ export function Header({ title, blurIntensity, setScreen, children, rightCompone
                 }}
               >
                 <View className="w-12 h-12 bg-primary/20 rounded-full flex items-center justify-center mr-4">
-                  <MessageSquarePlus size={24} color="#dcb8ff" />
+                  <MessageSquarePlus size={24} color="#0DBD8B" />
                 </View>
                 <View className="flex-1">
                   <Text className="text-base font-semibold text-white">Tạo phòng mới</Text>
@@ -105,7 +105,7 @@ export function Header({ title, blurIntensity, setScreen, children, rightCompone
                 }}
               >
                 <View className="w-12 h-12 bg-secondary/20 rounded-full flex items-center justify-center mr-4">
-                  <List size={24} color="#00fbfb" />
+                  <List size={24} color="#03B381" />
                 </View>
                 <View className="flex-1">
                   <Text className="text-base font-semibold text-white">Danh sách phòng</Text>

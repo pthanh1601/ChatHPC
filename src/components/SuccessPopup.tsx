@@ -69,7 +69,7 @@ export function SuccessPopup({ visible, message, onClose }: PopupProps) {
     >
       <View className="bg-card flex-row items-center p-4 rounded-2xl border border-secondary/30 shadow-lg shadow-secondary/20">
         <Animated.View style={{ transform: [{ scale: scaleAnim }] }} className="w-10 h-10 rounded-full bg-secondary/20 flex items-center justify-center mr-3">
-          <CheckCircle size={24} color="#00fbfb" />
+          <CheckCircle size={24} color="#03B381" />
         </Animated.View>
         <View className="flex-1">
           <Text className="text-base font-bold text-white">Thành công</Text>

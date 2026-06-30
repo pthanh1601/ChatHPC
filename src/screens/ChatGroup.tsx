@@ -28,7 +28,7 @@ export function ChatGroup({ setScreen }: { setScreen: (s: AppScreen) => void }) 
       <Header blurIntensity={blurIntensity}>
         <View className="flex-row items-center">
           <TouchableOpacity onPress={() => setScreen('chat_list')} className="mr-4">
-            <ArrowLeft size={24} color="#dcb8ff" />
+            <ArrowLeft size={24} color="#0DBD8B" />
           </TouchableOpacity>
           <View className="flex-row -space-x-3 mr-4">
             <View className="h-10 w-10 rounded-full border-2 border-background overflow-hidden">
@@ -44,7 +44,7 @@ export function ChatGroup({ setScreen }: { setScreen: (s: AppScreen) => void }) 
           </View>
         </View>
         <TouchableOpacity>
-          <Info size={24} color="#dcb8ff" />
+          <Info size={24} color="#0DBD8B" />
         </TouchableOpacity>
       </Header>
 
@@ -75,7 +75,7 @@ export function ChatGroup({ setScreen }: { setScreen: (s: AppScreen) => void }) 
 
         {/* Pinned Message */}
         <View className="rounded-xl p-4 flex-row items-center bg-card relative overflow-hidden my-4 border border-primary/50">
-          <View className="mr-3"><Pin size={20} color="#dcb8ff" /></View>
+          <View className="mr-3"><Pin size={20} color="#0DBD8B" /></View>
           <View className="flex-1">
             <Text className="text-xs font-semibold text-primary">Pinned Message</Text>
             <Text className="text-sm text-white" numberOfLines={1}>Meeting tomorrow at 10 AM. Don't forget the prototypes!</Text>
@@ -94,7 +94,7 @@ export function ChatGroup({ setScreen }: { setScreen: (s: AppScreen) => void }) 
               <Text className="text-base text-white">Did everyone see the latest design system updates? The new glassmorphism tokens are ready for testing.</Text>
               <View className="flex-row justify-end items-center gap-1 mt-1">
                 <Text className="text-[10px] text-white/70">10:42 AM</Text>
-                <CheckCheck size={14} color="#dcb8ff" />
+                <CheckCheck size={14} color="#0DBD8B" />
               </View>
             </View>
           </View>
@@ -129,7 +129,7 @@ export function ChatGroup({ setScreen }: { setScreen: (s: AppScreen) => void }) 
               <Text className="text-base text-white">Looks sharp, Marcus. Let's go with that for the interactive components.</Text>
               <View className="flex-row justify-end items-center gap-1 mt-1">
                 <Text className="text-[10px] text-white/70">10:46 AM</Text>
-                <CheckCheck size={14} color="#00fbfb" />
+                <CheckCheck size={14} color="#03B381" />
               </View>
             </View>
           </View>
@@ -140,7 +140,7 @@ export function ChatGroup({ setScreen }: { setScreen: (s: AppScreen) => void }) 
       <View className={`w-full z-40 px-5 pt-2 bg-transparent ${isKeyboardVisible ? 'pb-6' : 'pb-[96px]'}`}>
         <View className="bg-card rounded-full p-1.5 flex-row items-center border border-white/10">
           <TouchableOpacity className="w-12 h-12 flex items-center justify-center">
-            <Plus size={28} color="#dcb8ff" />
+            <Plus size={28} color="#0DBD8B" />
           </TouchableOpacity>
           <View className="flex-1 h-12 bg-background/50 rounded-full justify-center px-4 mx-1">
             <TextInput 
@@ -158,7 +158,7 @@ export function ChatGroup({ setScreen }: { setScreen: (s: AppScreen) => void }) 
             />
           </View>
           <TouchableOpacity className="w-12 h-12 flex items-center justify-center mr-1">
-            <Smile size={24} color="#00fbfb" />
+            <Smile size={24} color="#03B381" />
           </TouchableOpacity>
           <TouchableOpacity className="w-12 h-12 flex items-center justify-center rounded-full bg-bubble">
             <Send size={20} color="#fff" />

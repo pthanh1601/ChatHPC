@@ -77,7 +77,7 @@ export function CreateRoom({ setScreen }: { setScreen: (s: AppScreen) => void })
       <Header blurIntensity={blurIntensity}>
         <View className="flex-row items-center">
           <TouchableOpacity onPress={() => setScreen('chat_list')} className="w-10 h-10 items-center justify-center bg-surface/50 rounded-full border border-white/10 mr-4">
-            <ArrowLeft size={22} color="#dcb8ff" />
+            <ArrowLeft size={22} color="#0DBD8B" />
           </TouchableOpacity>
           <Text className="text-xl font-bold text-primary">Tạo phòng mới</Text>
         </View>
@@ -151,13 +151,13 @@ export function CreateRoom({ setScreen }: { setScreen: (s: AppScreen) => void })
               className={`p-4 rounded-2xl border ${!isPublic ? 'border-primary bg-primary/5' : 'border-white/5 bg-card'} flex-row items-center`}
             >
               <View className={`w-12 h-12 rounded-full flex items-center justify-center mr-4 ${!isPublic ? 'bg-primary/20' : 'bg-surface'}`}>
-                <Lock size={22} color={!isPublic ? '#dcb8ff' : '#a0a0a0'} />
+                <Lock size={22} color={!isPublic ? '#0DBD8B' : '#a0a0a0'} />
               </View>
               <View className="flex-1">
                 <Text className={`text-base font-semibold ${!isPublic ? 'text-primary' : 'text-white'}`}>Phòng riêng tư</Text>
                 <Text className="text-xs text-gray-400 mt-1">Chỉ những thành viên được mời mới có thể xem và tham gia trò chuyện</Text>
               </View>
-              {!isPublic && <Check size={20} color="#dcb8ff" />}
+              {!isPublic && <Check size={20} color="#0DBD8B" />}
             </TouchableOpacity>
 
             {/* Public Toggle */}
@@ -166,13 +166,13 @@ export function CreateRoom({ setScreen }: { setScreen: (s: AppScreen) => void })
               className={`p-4 rounded-2xl border ${isPublic ? 'border-secondary bg-secondary/5' : 'border-white/5 bg-card'} flex-row items-center`}
             >
               <View className={`w-12 h-12 rounded-full flex items-center justify-center mr-4 ${isPublic ? 'bg-secondary/20' : 'bg-surface'}`}>
-                <Globe size={22} color={isPublic ? '#00fbfb' : '#a0a0a0'} />
+                <Globe size={22} color={isPublic ? '#03B381' : '#a0a0a0'} />
               </View>
               <View className="flex-1">
                 <Text className={`text-base font-semibold ${isPublic ? 'text-secondary' : 'text-white'}`}>Phòng công khai</Text>
                 <Text className="text-xs text-gray-400 mt-1">Bất kỳ ai trên máy chủ cũng có thể tìm thấy và tham gia phòng này</Text>
               </View>
-              {isPublic && <Check size={20} color="#00fbfb" />}
+              {isPublic && <Check size={20} color="#03B381" />}
             </TouchableOpacity>
           </View>
 
@@ -186,7 +186,7 @@ export function CreateRoom({ setScreen }: { setScreen: (s: AppScreen) => void })
           disabled={isLoading}
           className={`h-14 bg-primary rounded-2xl flex-row items-center justify-center shadow-lg shadow-primary/30 ${isLoading ? 'opacity-70' : ''}`}
         >
-          {isLoading ? <ActivityIndicator color="#1a1f2e" /> : <Text className="text-[#1a1f2e] text-lg font-bold tracking-wide">TẠO PHÒNG</Text>}
+          {isLoading ? <ActivityIndicator color="#22262E" /> : <Text className="text-[#22262E] text-lg font-bold tracking-wide">TẠO PHÒNG</Text>}
         </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>

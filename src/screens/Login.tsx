@@ -56,7 +56,7 @@ export function Login({ setScreen }: { setScreen: (s: AppScreen) => void }) {
           {/* Header Section */}
           <View className="items-center mb-12">
             <View className="w-20 h-20 bg-primary/20 rounded-3xl flex items-center justify-center border border-primary/40 mb-6 shadow-xl">
-              <LogIn size={40} color="#dcb8ff" />
+              <LogIn size={40} color="#0DBD8B" />
             </View>
             <Text className="text-4xl font-extrabold text-white tracking-widest uppercase">Luminous</Text>
             <Text className="text-sm text-secondary/80 mt-2 font-medium tracking-widest uppercase">Establish Neural Link</Text>
@@ -100,7 +100,7 @@ export function Login({ setScreen }: { setScreen: (s: AppScreen) => void }) {
             disabled={isLoading}
             className={`w-full h-14 bg-primary rounded-2xl flex-row items-center justify-center mt-8 shadow-lg ${isLoading ? 'opacity-70' : ''}`}
           >
-            {isLoading ? <ActivityIndicator color="#1a1f2e" /> : <Text className="text-[#1a1f2e] text-lg font-bold tracking-wide">ĐĂNG NHẬP</Text>}
+            {isLoading ? <ActivityIndicator color="#22262E" /> : <Text className="text-[#22262E] text-lg font-bold tracking-wide">ĐĂNG NHẬP</Text>}
           </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>

@@ -4,14 +4,14 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        background: '#0f131c',
-        surface: '#1a1f2e',
-        card: '#1c1f29',
-        primary: '#dcb8ff',
-        secondary: '#00fbfb',
-        tertiary: '#ffb1c4',
+        background: '#15191E',
+        surface: '#22262E',
+        card: '#272C35',
+        primary: '#0DBD8B',
+        secondary: '#03B381',
+        tertiary: '#E3F7F2',
         muted: '#a0a0a0',
-        bubble: '#381e59',
+        bubble: '#0DBD8B',
       }
     },
   },

@@ -28,7 +28,7 @@ export function BottomNav({ currentScreen, setScreen }: BottomNavProps) {
           onPress={() => handleNavigation('chat_list')}
           className={`flex-1 flex-col items-center justify-center ${currentScreen === 'chat_list' ? '' : 'opacity-70'}`}
         >
-          <MessageCircle size={24} color={currentScreen === 'chat_list' ? '#dcb8ff' : '#a0a0a0'} />
+          <MessageCircle size={24} color={currentScreen === 'chat_list' ? '#0DBD8B' : '#a0a0a0'} />
           <Text className={`text-[10px] mt-1 font-medium ${currentScreen === 'chat_list' ? 'text-primary' : 'text-muted'}`}>Chat</Text>
         </TouchableOpacity>
 
@@ -36,7 +36,7 @@ export function BottomNav({ currentScreen, setScreen }: BottomNavProps) {
           onPress={() => handleNavigation('calls')}
           className={`flex-1 flex-col items-center justify-center ${currentScreen === 'calls' ? '' : 'opacity-70'}`}
         >
-          <Phone size={24} color={currentScreen === 'calls' ? '#dcb8ff' : '#a0a0a0'} />
+          <Phone size={24} color={currentScreen === 'calls' ? '#0DBD8B' : '#a0a0a0'} />
           <Text className={`text-[10px] mt-1 font-medium ${currentScreen === 'calls' ? 'text-primary' : 'text-muted'}`}>Cuộc gọi</Text>
         </TouchableOpacity>
 
@@ -44,7 +44,7 @@ export function BottomNav({ currentScreen, setScreen }: BottomNavProps) {
           onPress={() => handleNavigation('profile')}
           className={`flex-1 flex-col items-center justify-center ${currentScreen === 'profile' ? '' : 'opacity-70'}`}
         >
-          <Menu size={24} color={currentScreen === 'profile' ? '#dcb8ff' : '#a0a0a0'} />
+          <Menu size={24} color={currentScreen === 'profile' ? '#0DBD8B' : '#a0a0a0'} />
           <Text className={`text-[10px] mt-1 font-medium ${currentScreen === 'profile' ? 'text-primary' : 'text-muted'}`}>Menu</Text>
         </TouchableOpacity>
       </BlurView>

@@ -103,7 +103,7 @@ export function Calls({ setScreen }: { setScreen: (s: AppScreen) => void }) {
                 </View>
               </View>
               <TouchableOpacity className="w-10 h-10 bg-surface rounded-full flex items-center justify-center border border-white/5">
-                <Phone size={18} color="#dcb8ff" />
+                <Phone size={18} color="#0DBD8B" />
               </TouchableOpacity>
             </TouchableOpacity>
           ))}

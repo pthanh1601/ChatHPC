@@ -45,7 +45,7 @@ export function Search({ setScreen }: { setScreen: (s: AppScreen) => void }) {
             </View>
           ) : (
             <TouchableOpacity onPress={toggleSearch}>
-              <SearchIcon size={24} color="#dcb8ff" />
+              <SearchIcon size={24} color="#0DBD8B" />
             </TouchableOpacity>
           )}
         </View>
@@ -94,7 +94,7 @@ export function Search({ setScreen }: { setScreen: (s: AppScreen) => void }) {
                 <Text className="text-sm text-gray-400 mt-0.5">Đồng nghiệp</Text>
               </View>
               <TouchableOpacity className="w-10 h-10 bg-primary/20 rounded-full flex items-center justify-center border border-primary/30">
-                <UserPlus size={18} color="#dcb8ff" />
+                <UserPlus size={18} color="#0DBD8B" />
               </TouchableOpacity>
             </TouchableOpacity>
           ))}

@@ -2,22 +2,22 @@
 @import "tailwindcss";
 
 @theme {
-  --color-background: #0f131c;
-  --color-primary: #dcb8ff;
+  --color-background: #15191E;
+  --color-primary: #0DBD8B;
   --color-primary-container: #8a2be2;
   --color-secondary: #ffffff;
-  --color-secondary-container: #00fbfb;
+  --color-secondary-container: #03B381;
   --color-tertiary-container: #c40060;
   --color-tertiary: #ffb1c4;
   --color-surface-container-highest: #31353f;
   --color-surface-container-high: #262a34;
-  --color-surface-container: #1c1f29;
+  --color-surface-container: #272C35;
   --color-surface-container-low: #181b25;
-  --color-surface: #0f131c;
+  --color-surface: #15191E;
   --color-on-surface: #dfe2ef;
   --color-on-surface-variant: #cfc2d7;
-  --color-secondary-fixed: #00fbfb;
-  --color-primary-fixed-dim: #dcb8ff;
+  --color-secondary-fixed: #03B381;
+  --color-primary-fixed-dim: #0DBD8B;
   --color-error: #ffb4ab;
   --color-outline-variant: #4c4354;
 
@@ -47,7 +47,7 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .neon-ring {
-    box-shadow: 0 0 8px #00fbfb, inset 0 0 4px #00fbfb;
+    box-shadow: 0 0 8px #03B381, inset 0 0 4px #03B381;
 }
 
 .glow-primary {

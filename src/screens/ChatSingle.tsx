@@ -166,7 +166,7 @@ const MatrixImage = ({ url, client, info: fileInfo, eventId, mxcUrl, fileName }:
   if (!localUri) {
     return (
       <View style={{ width: displayWidth, height: displayHeight }} className="bg-white/5 flex items-center justify-center rounded-lg border border-white/10">
-        <ActivityIndicator color="#dcb8ff" />
+        <ActivityIndicator color="#0DBD8B" />
       </View>
     );
   }
@@ -280,7 +280,7 @@ const MatrixVideo = ({ url, client, info: fileInfo, eventId, mxcUrl, fileName }:
   if (!localUri) {
     return (
       <View style={{ width: displayWidth, height: displayHeight }} className="bg-white/5 flex items-center justify-center rounded-lg border border-white/10">
-        <ActivityIndicator color="#dcb8ff" />
+        <ActivityIndicator color="#0DBD8B" />
       </View>
     );
   }
@@ -998,7 +998,7 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
   const renderMessageContent = (msg: any) => {
     const client = getMatrixClient();
     if (msg.msgType?.startsWith('m.call')) {
-      let iconColor = msg.isMe ? "#fff" : "#dcb8ff";
+      let iconColor = msg.isMe ? "#fff" : "#0DBD8B";
       if (msg.msgType === 'm.call.missed') iconColor = "#ef4444";
       else if (msg.msgType === 'm.call.ended') iconColor = msg.isMe ? "#fff" : "#a0a0a0";
 
@@ -1029,7 +1029,7 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
       return (
         <TouchableOpacity onPress={() => playAudio(msg.mediaUrl, msg.id, msg, msg.mxcUrl)} className="flex-row items-center gap-3 w-48 py-1">
           <View className={`w-10 h-10 rounded-full flex items-center justify-center ${msg.isMe ? 'bg-background/20' : 'bg-primary/20'}`}>
-            {isPlaying ? <View className="w-3 h-3 bg-white rounded-sm" /> : <Play size={20} color={msg.isMe ? "#fff" : "#dcb8ff"} style={{ marginLeft: 3 }} />}
+            {isPlaying ? <View className="w-3 h-3 bg-white rounded-sm" /> : <Play size={20} color={msg.isMe ? "#fff" : "#0DBD8B"} style={{ marginLeft: 3 }} />}
           </View>
           <View className="flex-1 h-1 bg-white/30 rounded-full overflow-hidden">
             <View className="h-full bg-white" style={{ width: `${progress}%` }} />
@@ -1069,7 +1069,7 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
             LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
             setScreen('chat_list');
           }} className="mr-4">
-            <ArrowLeft size={24} color="#dcb8ff" />
+            <ArrowLeft size={24} color="#0DBD8B" />
           </TouchableOpacity>
           <View className="flex-row items-center">
             <View className="relative mr-3">
@@ -1096,7 +1096,7 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
 
       {!isUiReady ? (
         <View className="flex-1 items-center justify-center">
-          <ActivityIndicator size="large" color="#dcb8ff" />
+          <ActivityIndicator size="large" color="#0DBD8B" />
         </View>
       ) : (
         <FlatList
@@ -1115,7 +1115,7 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
           contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 20, paddingBottom: 20 }}
           ListFooterComponent={() => (
             <>
-              {isLoadingHistory && <ActivityIndicator size="small" color="#dcb8ff" className="my-4" />}
+              {isLoadingHistory && <ActivityIndicator size="small" color="#0DBD8B" className="my-4" />}
               <View className="h-24" /> 
             </>
           )}
@@ -1138,9 +1138,9 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
                 <View className="flex-row items-center gap-1 mt-1 mr-1">
                   <Text className="text-[10px] text-gray-500">{msg.time}</Text>
                   {msg.status === 'sending' ? (
-                    <ActivityIndicator size="small" color="#00fbfb" style={{ width: 14, height: 14, transform: [{ scale: 0.6 }] }} />
+                    <ActivityIndicator size="small" color="#03B381" style={{ width: 14, height: 14, transform: [{ scale: 0.6 }] }} />
                   ) : (
-                    <CheckCheck size={14} color="#00fbfb" />
+                    <CheckCheck size={14} color="#03B381" />
                   )}
                 </View>
               </View>
@@ -1163,7 +1163,7 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
           style={{ bottom: 90 }}
           onPress={() => flatListRef.current?.scrollToOffset({ offset: 0, animated: true })}
         >
-          <ChevronDown size={24} color="#dcb8ff" />
+          <ChevronDown size={24} color="#0DBD8B" />
         </TouchableOpacity>
       )}
 
@@ -1172,13 +1172,13 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
           <View className="pb-4 flex-row gap-6">
             <TouchableOpacity onPress={handlePickImage} className="items-center">
               <View className="w-12 h-12 bg-secondary/20 rounded-full flex items-center justify-center mb-2">
-                <ImageIcon size={22} color="#00fbfb" />
+                <ImageIcon size={22} color="#03B381" />
               </View>
               <Text className="text-[11px] font-medium text-gray-300">Hình ảnh</Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={handlePickDocument} className="items-center">
               <View className="w-12 h-12 bg-primary/20 rounded-full flex items-center justify-center mb-2">
-                <FileIcon size={22} color="#dcb8ff" />
+                <FileIcon size={22} color="#0DBD8B" />
               </View>
               <Text className="text-[11px] font-medium text-gray-300">Tài liệu</Text>
             </TouchableOpacity>
@@ -1196,13 +1196,13 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
                 <Text className="text-white text-[15px] font-medium">Đang ghi âm... {formatDurationStr(recordDuration)}</Text>
               </View>
               <TouchableOpacity onPress={() => stopRecording(true)} className="w-12 h-12 flex items-center justify-center rounded-full bg-primary shadow-lg shadow-primary/30">
-                <Send size={20} color="#1a1f2e" style={{ marginLeft: -2 }} />
+                <Send size={20} color="#22262E" style={{ marginLeft: -2 }} />
               </TouchableOpacity>
             </>
           ) : (
             <>
               <TouchableOpacity onPress={() => setShowAttachMenu(!showAttachMenu)} className="w-12 h-12 flex items-center justify-center">
-                {showAttachMenu ? <X size={24} color="#a0a0a0" /> : <Plus size={28} color="#dcb8ff" />}
+                {showAttachMenu ? <X size={24} color="#a0a0a0" /> : <Plus size={28} color="#0DBD8B" />}
               </TouchableOpacity>
               <View className="flex-1 h-12 bg-background/50 rounded-full justify-center px-4 mx-1">
                 <TextInput
@@ -1229,7 +1229,7 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
               </View>
               {inputText.trim().length === 0 ? (
                 <TouchableOpacity onPress={startRecording} className="w-12 h-12 flex items-center justify-center mr-1">
-                  <Mic size={24} color="#00fbfb" />
+                  <Mic size={24} color="#03B381" />
                 </TouchableOpacity>
               ) : (
                 <TouchableOpacity onPress={handleSend} className="w-12 h-12 flex items-center justify-center rounded-full bg-bubble shadow-lg shadow-primary/20">
