@@ -465,9 +465,9 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.All,
-        quality: 0.8, // Nén ảnh 80%
-        videoQuality: ImagePicker.UIImagePickerControllerQualityType.Medium,
-        videoExportPreset: ImagePicker.VideoExportPreset.H264_960x540,
+        quality: 1.0, // Giữ tối đa chất lượng ảnh
+        videoQuality: ImagePicker.UIImagePickerControllerQualityType.High,
+        videoExportPreset: ImagePicker.VideoExportPreset.H264_1920x1080, // Chuẩn y hệt App Element 1080p
         allowsMultipleSelection: true,
       });
 
@@ -516,24 +516,21 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
           
           if (item.isVideo) {
             try {
-              console.log(`Đang nén video ${item.fileName}...`);
-              const compressedUri = await CompressorVideo.compress(asset.uri, {
-                compressionMethod: 'auto',
-              });
-              const fileInfo = await FileSystem.getInfoAsync(compressedUri);
+              // KHÔNG DÙNG react-native-compressor NỮA ĐỂ TRÁNH BÓP KÉP
+              // iOS ImagePicker đã tự động xuất ra chuẩn 1080p (y hệt cấu hình Element)
+              const fileInfo = await FileSystem.getInfoAsync(asset.uri);
               if (fileInfo.exists) {
-                asset.uri = compressedUri;
                 asset.fileSize = fileInfo.size;
-                console.log(`Nén video ${item.fileName} thành công, dung lượng mới:`, asset.fileSize);
+                console.log(`Dung lượng video (1080p) ${item.fileName}:`, asset.fileSize);
                 
                 if (asset.fileSize > 50 * 1024 * 1024) {
-                  Alert.alert("Lỗi", `Video ${item.fileName} sau khi nén vẫn lớn hơn 50MB. Đã bỏ qua file này.`);
+                  Alert.alert("Lỗi", `Video ${item.fileName} lớn hơn 50MB. Đã bỏ qua file này.`);
                   setMessages(prev => prev.map(m => m.id === item.tempEventId ? { ...m, status: 'failed' } : m));
                   continue; // Skip this file and go to next
                 }
               }
             } catch (e) {
-              console.warn(`Lỗi nén video ${item.fileName}:`, e);
+              console.warn(`Lỗi kiểm tra video ${item.fileName}:`, e);
             }
           }
 
