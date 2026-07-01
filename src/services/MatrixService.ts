@@ -234,6 +234,15 @@ class MatrixService extends EventEmitter {
             cryptoCallbacks: cryptoCallbacks as any,
         });
 
+        // Chặn luồng gửi room_key_request để tránh spam mạng và làm nóng máy (do infinite loop xin khóa giải mã)
+        const originalSendToDevice = this.client.sendToDevice.bind(this.client);
+        this.client.sendToDevice = async (eventType: string, contentMap: any) => {
+            if (eventType === "m.room_key_request") {
+                return {}; // Bỏ qua không gửi đi
+            }
+            return originalSendToDevice(eventType, contentMap);
+        };
+
         // Lắng nghe sự kiện token hết hạn/hủy để tự động đăng xuất
         this.client.on("Session.logged_out", async () => {
             console.warn("⚠️ Access token is invalid/revoked, logging out...");
