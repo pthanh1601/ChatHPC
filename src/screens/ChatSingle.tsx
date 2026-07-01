@@ -13,6 +13,7 @@ import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as VideoThumbnails from 'expo-video-thumbnails';
+import { Video as CompressorVideo } from 'react-native-compressor';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -466,98 +467,132 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
         mediaTypes: ImagePicker.MediaTypeOptions.All,
         quality: 0.8, // Nén ảnh 80%
         videoQuality: ImagePicker.UIImagePickerControllerQualityType.Medium,
-        videoExportPreset: ImagePicker.VideoExportPreset.H264_960x540, // Độ phân giải 540p (qHD) để lọt qua giới hạn 10MB của Server
+        videoExportPreset: ImagePicker.VideoExportPreset.H264_960x540,
+        allowsMultipleSelection: true,
       });
 
-      if (!result.canceled && result.assets[0]) {
-        const asset = result.assets[0];
-        const isVideo = asset.type === 'video';
-        const fileExtension = asset.uri.split('.').pop() || (isVideo ? 'mp4' : 'jpg');
-        const fileName = asset.fileName || `media_${Date.now()}.${fileExtension}`;
-        
-        const fileToUpload = {
-          uri: asset.uri,
-          name: fileName,
-          type: asset.mimeType || (isVideo ? 'video/mp4' : 'image/jpeg'),
-          size: asset.fileSize || 0,
-          info: {
-            w: asset.width,
-            h: asset.height,
-            duration: asset.duration ? asset.duration * 1000 : undefined
-          }
-        };
-
-        const tempEventId = 'txn_media_' + Date.now();
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        setShowAttachMenu(false);
         const date = new Date();
         const currentTimeStr = date.getHours().toString().padStart(2, '0') + ':' + date.getMinutes().toString().padStart(2, '0');
+        
+        // 1. Prepare optimistic messages for all selected files
+        const pendingUploads = result.assets.map((rawAsset, index) => {
+          const isVideo = rawAsset.type === 'video';
+          const fileExtension = rawAsset.uri.split('.').pop() || (isVideo ? 'mp4' : 'jpg');
+          const fileName = rawAsset.fileName || `media_${Date.now()}_${index}.${fileExtension}`;
+          const tempEventId = 'txn_media_' + Date.now() + '_' + index;
+          
+          const msgInfo = {
+            w: rawAsset.width,
+            h: rawAsset.height,
+            duration: rawAsset.duration ? rawAsset.duration * 1000 : undefined
+          };
 
-        // Sinh ảnh thu nhỏ cục bộ
-        let thumbnailData: any = null;
-        try {
-          if (isVideo) {
-            const { uri: thumbUri } = await VideoThumbnails.getThumbnailAsync(asset.uri, { time: 1000, quality: 0.5 });
-            const thumbInfo = await FileSystem.getInfoAsync(thumbUri) as any;
-            thumbnailData = {
-              uri: thumbUri,
-              name: `thumb_${Date.now()}.jpg`,
-              type: 'image/jpeg',
-              size: thumbInfo.size || 0,
-              info: { w: 800, h: 800 }
-            };
-          } else {
-            const manipResult = await ImageManipulator.manipulateAsync(
-              asset.uri,
-              [{ resize: { width: Math.min(800, asset.width || 800) } }],
-              { compress: 0.5, format: ImageManipulator.SaveFormat.JPEG }
-            );
-            const thumbInfo = await FileSystem.getInfoAsync(manipResult.uri) as any;
-            thumbnailData = {
-              uri: manipResult.uri,
-              name: `thumb_${Date.now()}.jpg`,
-              type: 'image/jpeg',
-              size: thumbInfo.size || 0,
-              info: { w: manipResult.width, h: manipResult.height }
-            };
-          }
-        } catch (e) {
-          console.warn("⚠️ Không thể tạo thumbnail:", e);
-        }
+          const optimisticMessage = {
+            id: tempEventId,
+            sender: getMatrixClient().getUserId(),
+            isMe: true,
+            text: fileName,
+            time: currentTimeStr,
+            senderName: 'Tôi',
+            msgType: isVideo ? 'm.video' : 'm.image',
+            mediaUrl: rawAsset.uri, 
+            mxcUrl: null,
+            status: 'sending',
+            info: msgInfo
+          };
 
-        // Hiển thị trạng thái gửi "lạc quan" lên màn hình của bạn trước
-        const optimisticMessage = {
-          id: tempEventId,
-          sender: getMatrixClient().getUserId(),
-          isMe: true,
-          text: fileName,
-          time: currentTimeStr,
-          senderName: 'Tôi',
-          msgType: isVideo ? 'm.video' : 'm.image',
-          mediaUrl: asset.uri, 
-          mxcUrl: null,
-          status: 'sending',
-          info: fileToUpload.info
-        };
+          return { rawAsset, tempEventId, optimisticMessage, isVideo, fileExtension, fileName, msgInfo };
+        });
 
-        setMessages(prev => [optimisticMessage, ...prev]);
+        // Hiển thị tất cả tin nhắn đang gửi lên màn hình ngay lập tức
+        setMessages(prev => [...pendingUploads.map(p => p.optimisticMessage).reverse(), ...prev]);
         flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
 
-        // CHUẨN ĐƠN GIẢN HÓA: Thực hiện tuần tự trực tiếp, loại bỏ hoàn toàn setTimeout vô định hướng
-        try {
-          console.log("📡 Đang mã hóa dữ liệu nhị phân và gửi tuần tự...");
-          const response = await mediaService.uploadFile(currentActiveRoomId!, fileToUpload, thumbnailData);
+        // 2. Process and upload sequentially to save RAM
+        for (const item of pendingUploads) {
+          let asset = { ...item.rawAsset };
           
-          if (response && response.mxcUrl) {
-            const safeId = response.mxcUrl.replace(/[^a-zA-Z0-9]/g, '_');
-            const prefix = isVideo ? 'vid_v3_' : 'img_v3_';
-            const cacheUri = FileSystem.cacheDirectory + prefix + safeId + '.' + fileExtension;
-            
-            await FileSystem.copyAsync({ from: asset.uri, to: cacheUri }).catch(() => {});
-            console.log("✅ Đã hoàn tất gán cache mồi sau upload:", cacheUri);
+          if (item.isVideo) {
+            try {
+              console.log(`Đang nén video ${item.fileName}...`);
+              const compressedUri = await CompressorVideo.compress(asset.uri, {
+                compressionMethod: 'auto',
+              });
+              const fileInfo = await FileSystem.getInfoAsync(compressedUri);
+              if (fileInfo.exists) {
+                asset.uri = compressedUri;
+                asset.fileSize = fileInfo.size;
+                console.log(`Nén video ${item.fileName} thành công, dung lượng mới:`, asset.fileSize);
+                
+                if (asset.fileSize > 50 * 1024 * 1024) {
+                  Alert.alert("Lỗi", `Video ${item.fileName} sau khi nén vẫn lớn hơn 50MB. Đã bỏ qua file này.`);
+                  setMessages(prev => prev.map(m => m.id === item.tempEventId ? { ...m, status: 'failed' } : m));
+                  continue; // Skip this file and go to next
+                }
+              }
+            } catch (e) {
+              console.warn(`Lỗi nén video ${item.fileName}:`, e);
+            }
           }
-        } catch (uploadErr) {
-          console.error("❌ Gửi tệp lên server thất bại:", uploadErr);
-          // Cập nhật trạng thái lỗi nếu cần
-          setMessages(prev => prev.map(m => m.id === tempEventId ? { ...m, status: 'failed' } : m));
+
+          const fileToUpload = {
+            uri: asset.uri,
+            name: item.fileName,
+            type: asset.mimeType || (item.isVideo ? 'video/mp4' : 'image/jpeg'),
+            size: asset.fileSize || 0,
+            info: item.msgInfo
+          };
+
+          // Sinh ảnh thu nhỏ cục bộ
+          let thumbnailData: any = null;
+          try {
+            if (item.isVideo) {
+              const { uri: thumbUri } = await VideoThumbnails.getThumbnailAsync(asset.uri, { time: 1000, quality: 0.5 });
+              const thumbInfo = await FileSystem.getInfoAsync(thumbUri) as any;
+              thumbnailData = {
+                uri: thumbUri,
+                name: `thumb_${Date.now()}.jpg`,
+                type: 'image/jpeg',
+                size: thumbInfo.size || 0,
+                info: { w: 800, h: 800 }
+              };
+            } else {
+              const manipResult = await ImageManipulator.manipulateAsync(
+                asset.uri,
+                [{ resize: { width: Math.min(800, asset.width || 800) } }],
+                { compress: 0.5, format: ImageManipulator.SaveFormat.JPEG }
+              );
+              const thumbInfo = await FileSystem.getInfoAsync(manipResult.uri) as any;
+              thumbnailData = {
+                uri: manipResult.uri,
+                name: `thumb_${Date.now()}.jpg`,
+                type: 'image/jpeg',
+                size: thumbInfo.size || 0,
+                info: { w: manipResult.width, h: manipResult.height }
+              };
+            }
+          } catch (e) {
+            console.warn(`⚠️ Không thể tạo thumbnail cho ${item.fileName}:`, e);
+          }
+
+          try {
+            console.log(`📡 Đang tải lên ${item.fileName}...`);
+            const response = await mediaService.uploadFile(currentActiveRoomId!, fileToUpload, thumbnailData);
+            
+            if (response && response.mxcUrl) {
+              const safeId = response.mxcUrl.replace(/[^a-zA-Z0-9]/g, '_');
+              const prefix = item.isVideo ? 'vid_v3_' : 'img_v3_';
+              const cacheUri = FileSystem.cacheDirectory + prefix + safeId + '.' + item.fileExtension;
+              
+              await FileSystem.copyAsync({ from: asset.uri, to: cacheUri }).catch(() => {});
+              console.log(`✅ Đã upload thành công ${item.fileName}`);
+            }
+          } catch (uploadErr) {
+            console.error(`❌ Gửi tệp ${item.fileName} thất bại:`, uploadErr);
+            setMessages(prev => prev.map(m => m.id === item.tempEventId ? { ...m, status: 'failed' } : m));
+          }
         }
       }
     } catch (e) {
