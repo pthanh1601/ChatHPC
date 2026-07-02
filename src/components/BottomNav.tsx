@@ -22,7 +22,7 @@ export function BottomNav({ currentScreen, setScreen }: BottomNavProps) {
   };
 
   return (
-    <View className="absolute bottom-6 left-5 right-5 z-50 shadow-lg shadow-[#8a2be2]/20">
+    <View className="absolute bottom-6 left-5 right-5 z-50 shadow-lg shadow-primary/20">
       <BlurView intensity={40} tint="dark" className="flex-row justify-between items-center px-2 py-3 bg-surface/40 border border-white/10 rounded-full overflow-hidden">
         <TouchableOpacity 
           onPress={() => handleNavigation('chat_list')}

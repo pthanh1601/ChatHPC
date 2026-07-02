@@ -1,8 +1,8 @@
 import React, { useState, useEffect, memo } from 'react';
-import { View, Text, Image, TouchableOpacity, ScrollView, LayoutAnimation, Platform, UIManager, FlatList } from 'react-native';
-import { Plus, CheckCheck, MessageSquarePlus } from 'lucide-react-native';
+import { View, Text, Image, TouchableOpacity, ScrollView, LayoutAnimation, Platform, UIManager, FlatList, TextInput, Keyboard } from 'react-native';
+import { Plus, CheckCheck, MessageSquarePlus, Search, X } from 'lucide-react-native';
 import { AppScreen, CONTACTS } from '../data';
-import { getMatrixClient, setCurrentActiveRoomId } from '../services/MatrixService';
+import { getMatrixClient, setCurrentActiveRoomId, setSearchTarget } from '../services/MatrixService';
 import { persistentLocalStorage } from '../services/StorageService';
 import { Header } from '../components/Header';
 
@@ -31,8 +31,15 @@ const ChatItem = ({ chat, setScreen, handleAcceptInvite, handleRejectInvite }: a
       <TouchableOpacity
         onPress={() => {
           if (!chat.isInvite) {
+            Keyboard.dismiss();
             setCurrentActiveRoomId(chat.id);
-            LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+            if (chat.matchedEventId) {
+              setSearchTarget(chat.matchedEventId, chat.searchQuery);
+            } else {
+              setSearchTarget(null, null);
+            }
+
+            // Xóa requestAnimationFrame để chuyển trang ngay lập tức (không chờ khung hình)
             setScreen('chat_single');
           }
         }}
@@ -46,9 +53,9 @@ const ChatItem = ({ chat, setScreen, handleAcceptInvite, handleRejectInvite }: a
           <View className={`relative mr-3 ${chat.unread > 0 && !chat.isInvite ? 'ml-3' : ''}`}>
             <View className={`w-14 h-14 rounded-full overflow-hidden items-center justify-center ${chat.avatar ? 'border border-white/10' : ''}`}>
               {chat.avatar ? (
-                <Image 
-                  source={chat.accessToken && chat.avatar?.includes('_matrix') ? { uri: chat.avatar, headers: { Authorization: `Bearer ${chat.accessToken}` } } : { uri: chat.avatar }} 
-                  className="w-full h-full" 
+                <Image
+                  source={chat.accessToken && chat.avatar?.includes('_matrix') ? { uri: chat.avatar, headers: { Authorization: `Bearer ${chat.accessToken}` } } : { uri: chat.avatar }}
+                  className="w-full h-full"
                 />
               ) : (
                 <View className="w-full h-full flex items-center justify-center" style={{ backgroundColor: getAvatarColor(chat.id) }}>
@@ -106,6 +113,8 @@ const MemoizedChatItem = memo(ChatItem, (prevProps, nextProps) => {
 
 export function ChatList({ setScreen }: { setScreen: (s: AppScreen) => void }) {
   const [blurIntensity, setBlurIntensity] = useState(0);
+  const [filter, setFilter] = useState<'all' | 'unread'>('all');
+  const [searchQuery, setSearchQuery] = useState('');
 
   const getInitialChats = () => {
     const client = getMatrixClient();
@@ -160,6 +169,7 @@ export function ChatList({ setScreen }: { setScreen: (s: AppScreen) => void }) {
         avatar,
         accessToken: client.getAccessToken(),
         lastMessage,
+        lastEventId: lastEvent ? lastEvent.getId() : null,
         time,
         unread: isInvite ? 1 : unreadCount,
         timestamp: lastEvent ? lastEvent.getTs() : (isInvite ? Date.now() : 0),
@@ -178,7 +188,7 @@ export function ChatList({ setScreen }: { setScreen: (s: AppScreen) => void }) {
     if (cached) {
       try {
         return JSON.parse(cached);
-      } catch (e) {}
+      } catch (e) { }
     }
     return getInitialChats();
   });
@@ -247,12 +257,53 @@ export function ChatList({ setScreen }: { setScreen: (s: AppScreen) => void }) {
     }
   };
 
+  const filteredChats = React.useMemo(() => {
+    return chats.filter(c => {
+      const matchesFilter = filter === 'all' || (filter === 'unread' && (c.unread > 0 || c.isInvite));
+      const searchLower = searchQuery.toLowerCase();
+
+      let matchesSearch = c.name?.toLowerCase().includes(searchLower) || c.lastMessage?.toLowerCase().includes(searchLower);
+
+      if (matchesSearch && searchQuery.trim().length > 0) {
+        c.matchedEventId = c.lastEventId;
+        c.searchQuery = searchQuery;
+      }
+
+      // Tìm kiếm sâu vào bộ nhớ tạm (timeline) của phòng chat nếu chưa thấy
+      if (!matchesSearch && searchQuery.trim().length > 0) {
+        const client = getMatrixClient();
+        const room = client?.getRoom(c.id);
+        if (room) {
+          const events = room.timeline;
+          for (let i = events.length - 1; i >= 0; i--) {
+            const event = events[i];
+            if (event.getType() === 'm.room.message') {
+              let body = event.getContent().body;
+              if (event.isEncrypted && event.isEncrypted()) {
+                const clear = event.getClearContent();
+                if (clear && clear.body) body = clear.body;
+              }
+              if (body && body.toLowerCase().includes(searchLower)) {
+                matchesSearch = true;
+                c.matchedEventId = event.getId();
+                c.searchQuery = searchQuery;
+                break;
+              }
+            }
+          }
+        }
+      }
+
+      return matchesFilter && matchesSearch;
+    });
+  }, [chats, filter, searchQuery]);
+
   return (
     <View className="flex-1 bg-background">
       <Header title="Tin nhắn" blurIntensity={blurIntensity} setScreen={setScreen} />
 
       <FlatList
-        data={chats}
+        data={filteredChats}
         keyExtractor={item => item.id}
         className="flex-1 px-5"
         contentContainerStyle={{ paddingTop: 120, paddingBottom: 120 }}
@@ -261,15 +312,43 @@ export function ChatList({ setScreen }: { setScreen: (s: AppScreen) => void }) {
         initialNumToRender={12}
         maxToRenderPerBatch={10}
         windowSize={5}
-        keyboardShouldPersistTaps="handled"
-        ListHeaderComponent={() => (
+        keyboardShouldPersistTaps="always"
+        ListHeaderComponent={(
           <>
-            <View className="flex-row p-1 bg-surface rounded-xl border border-white/5 mt-4 mb-8">
-              <TouchableOpacity className="flex-1 py-2 rounded-lg bg-primary items-center">
-                <Text className="text-sm font-semibold text-surface">Direct</Text>
+            <View className="flex-row items-center mt-2 mb-4">
+              <View className="flex-1 flex-row items-center bg-surface rounded-xl px-4 py-3 border border-white/5">
+                <Search size={20} color="#a0a0a0" />
+                <TextInput
+                  placeholder="Tìm kiếm..."
+                  placeholderTextColor="#a0a0a0"
+                  className="flex-1 ml-2 text-white font-medium"
+                  style={{ includeFontPadding: false, padding: 0 }}
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                />
+                {searchQuery.length > 0 && (
+                  <TouchableOpacity onPress={() => {
+                    setSearchQuery('');
+                    Keyboard.dismiss();
+                  }} className="p-1">
+                    <X size={18} color="#a0a0a0" />
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+
+            <View className="flex-row p-1 bg-surface rounded-xl border border-white/5 mb-8">
+              <TouchableOpacity
+                className={`flex-1 py-2 rounded-lg items-center ${filter === 'all' ? 'bg-primary' : ''}`}
+                onPress={() => setFilter('all')}
+              >
+                <Text className={`text-sm font-semibold ${filter === 'all' ? 'text-surface' : 'text-gray-400'}`}>Tất cả</Text>
               </TouchableOpacity>
-              <TouchableOpacity className="flex-1 py-2 rounded-lg items-center" onPress={() => setScreen('chat_group')}>
-                <Text className="text-sm font-semibold text-gray-400">Groups</Text>
+              <TouchableOpacity
+                className={`flex-1 py-2 rounded-lg items-center ${filter === 'unread' ? 'bg-primary' : ''}`}
+                onPress={() => setFilter('unread')}
+              >
+                <Text className={`text-sm font-semibold ${filter === 'unread' ? 'text-surface' : 'text-gray-400'}`}>Chưa đọc</Text>
               </TouchableOpacity>
             </View>
           </>
@@ -287,9 +366,9 @@ export function ChatList({ setScreen }: { setScreen: (s: AppScreen) => void }) {
         )}
       />
 
-      <TouchableOpacity onPress={() => setScreen('chat_group')} className="absolute bottom-28 right-6 w-14 h-14 bg-primary rounded-2xl flex items-center justify-center z-40 shadow-xl">
+      {/* <TouchableOpacity onPress={() => setScreen('chat_group')} className="absolute bottom-28 right-6 w-14 h-14 bg-primary rounded-2xl flex items-center justify-center z-40 shadow-xl">
         <MessageSquarePlus size={28} color="#22262E" />
-      </TouchableOpacity>
+      </TouchableOpacity> */}
     </View>
   );
 }

@@ -5,10 +5,11 @@ import { Audio, Video as ExpoVideo, ResizeMode } from 'expo-av';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { AppScreen, CONTACTS, MEDIA } from '../data';
-import { getMatrixClient, currentActiveRoomId, matrixService } from '../services/MatrixService';
+import { getMatrixClient, currentActiveRoomId, matrixService, currentSearchTargetEventId, currentSearchQuery, setSearchTarget } from '../services/MatrixService';
 import { mediaService, decryptMatrixFile } from '../services/MediaService';
 import { voipService } from '../services/VoipService';
 import { Header } from '../components/Header';
+import { getAvatarColor } from './ChatList';
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import * as ImageManipulator from 'expo-image-manipulator';
@@ -28,11 +29,11 @@ const formatDurationStr = (seconds: number) => {
 const getDisplayDimensions = (originalWidth?: number, originalHeight?: number) => {
   const maxW = 240;
   const maxH = 240;
-  
+
   if (!originalWidth || !originalHeight) {
     return { width: 220, height: 220 };
   }
-  
+
   const aspectRatio = originalWidth / originalHeight;
   if (aspectRatio > 1) {
     // Landscape
@@ -64,7 +65,7 @@ const MatrixImage = ({ url, client, info: fileInfo, eventId, mxcUrl, fileName }:
         }
         const cacheKey = mxcUrl || url;
         const safeId = cacheKey.replace(/[^a-zA-Z0-9]/g, '_');
-        
+
         let ext = 'jpg';
         if (fileName) {
           const parts = fileName.split('.');
@@ -117,7 +118,7 @@ const MatrixImage = ({ url, client, info: fileInfo, eventId, mxcUrl, fileName }:
         // Tối ưu hóa: Ưu tiên giải mã thumbnail_file (rất nhẹ) để hiển thị tức thì trên luồng chat
         // Thay vì phải giải mã file gốc vài MB bằng JS Fallback làm treo app vài giây.
         const targetEncryptInfo = fileInfo?.thumbnail_file || fileInfo?.encryptedFileInfo;
-        
+
         if (targetEncryptInfo) {
           try {
             await decryptMatrixFile(targetEncryptInfo, fileUri);
@@ -193,7 +194,7 @@ const MatrixVideo = ({ url, client, info: fileInfo, eventId, mxcUrl, fileName }:
         }
         const cacheKey = mxcUrl || url;
         const safeId = cacheKey.replace(/[^a-zA-Z0-9]/g, '_');
-        
+
         let ext = 'mp4';
         if (fileName) {
           const parts = fileName.split('.');
@@ -369,7 +370,7 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
             if (clear.body) fileName = clear.body;
 
             info = clear.info || {};
-            
+
             // ĐỒNG BỘ KHÓA GIẢI MÃ: Đảm bảo trường encryptedFileInfo luôn lấy đúng đối tượng chứa khóa gốc
             if (clear.file) {
               info.encryptedFileInfo = clear.file;
@@ -431,8 +432,8 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
   };
 
   const [messages, setMessages] = useState<any[]>([]);
-  const [isUiReady, setIsUiReady] = useState(false);
-  const [roomInfo, setRoomInfo] = useState({ name: 'Phòng chat', avatar: CONTACTS.kael.avatar, members: 0 });
+  const [isUiReady, setIsUiReady] = useState(true);
+  const [roomInfo, setRoomInfo] = useState<{ name: string, avatar: string | null, members: number }>({ name: 'Phòng chat', avatar: null, members: 0 });
 
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [showScrollDown, setShowScrollDown] = useState(false);
@@ -475,14 +476,14 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
         setShowAttachMenu(false);
         const date = new Date();
         const currentTimeStr = date.getHours().toString().padStart(2, '0') + ':' + date.getMinutes().toString().padStart(2, '0');
-        
+
         // 1. Prepare optimistic messages for all selected files
         const pendingUploads = result.assets.map((rawAsset, index) => {
           const isVideo = rawAsset.type === 'video';
           const fileExtension = rawAsset.uri.split('.').pop() || (isVideo ? 'mp4' : 'jpg');
           const fileName = rawAsset.fileName || `media_${Date.now()}_${index}.${fileExtension}`;
           const tempEventId = 'txn_media_' + Date.now() + '_' + index;
-          
+
           const msgInfo = {
             w: rawAsset.width,
             h: rawAsset.height,
@@ -497,7 +498,7 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
             time: currentTimeStr,
             senderName: 'Tôi',
             msgType: isVideo ? 'm.video' : 'm.image',
-            mediaUrl: rawAsset.uri, 
+            mediaUrl: rawAsset.uri,
             mxcUrl: null,
             status: 'sending',
             info: msgInfo
@@ -513,7 +514,7 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
         // 2. Process and upload sequentially to save RAM
         for (const item of pendingUploads) {
           let asset = { ...item.rawAsset };
-          
+
           if (item.isVideo) {
             try {
               // KHÔNG DÙNG react-native-compressor NỮA ĐỂ TRÁNH BÓP KÉP
@@ -522,7 +523,7 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
               if (fileInfo.exists) {
                 asset.fileSize = fileInfo.size;
                 console.log(`Dung lượng video (1080p) ${item.fileName}:`, asset.fileSize);
-                
+
                 if (asset.fileSize > 50 * 1024 * 1024) {
                   Alert.alert("Lỗi", `Video ${item.fileName} lớn hơn 50MB. Đã bỏ qua file này.`);
                   setMessages(prev => prev.map(m => m.id === item.tempEventId ? { ...m, status: 'failed' } : m));
@@ -577,13 +578,13 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
           try {
             console.log(`📡 Đang tải lên ${item.fileName}...`);
             const response = await mediaService.uploadFile(currentActiveRoomId!, fileToUpload, thumbnailData);
-            
+
             if (response && response.mxcUrl) {
               const safeId = response.mxcUrl.replace(/[^a-zA-Z0-9]/g, '_');
               const prefix = item.isVideo ? 'vid_v3_' : 'img_v3_';
               const cacheUri = FileSystem.cacheDirectory + prefix + safeId + '.' + item.fileExtension;
-              
-              await FileSystem.copyAsync({ from: asset.uri, to: cacheUri }).catch(() => {});
+
+              await FileSystem.copyAsync({ from: asset.uri, to: cacheUri }).catch(() => { });
               console.log(`✅ Đã upload thành công ${item.fileName}`);
             }
           } catch (uploadErr) {
@@ -614,7 +615,7 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
         const tempTxnId = 'txn_' + Date.now();
         const date = new Date();
         const currentTimeStr = date.getHours().toString().padStart(2, '0') + ':' + date.getMinutes().toString().padStart(2, '0');
-        
+
         const fakeTempMessage = {
           id: tempTxnId,
           sender: client?.getUserId() || '',
@@ -681,7 +682,7 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
         const tempTxnId = 'txn_' + Date.now();
         const date = new Date();
         const currentTimeStr = date.getHours().toString().padStart(2, '0') + ':' + date.getMinutes().toString().padStart(2, '0');
-        
+
         const fakeTempMessage = {
           id: tempTxnId,
           sender: client?.getUserId() || '',
@@ -706,9 +707,9 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
               FileSystem.copyAsync({ from: uri, to: targetCacheUri }).catch(() => { });
             }
           })
-          .catch(err => {
-            Alert.alert('Lỗi', 'Không thể gửi ghi âm: ' + err.message);
-          });
+            .catch(err => {
+              Alert.alert('Lỗi', 'Không thể gửi ghi âm: ' + err.message);
+            });
         }, 0);
       }
     } catch (err) {
@@ -868,31 +869,43 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
   };
 
   useEffect(() => {
-    const interactionPromise = InteractionManager.runAfterInteractions(() => {
-      setIsUiReady(true);
-
-      const client = getMatrixClient();
-      if (client && currentActiveRoomId) {
-        const room = client.getRoom(currentActiveRoomId);
-        if (room) {
-          let avatarUrl = room.getAvatarUrl(client.getHomeserverUrl(), 96, 96, 'crop', false, false);
-          if (avatarUrl) {
-            avatarUrl = avatarUrl.replace(/\/_matrix\/media\/(r0|v3)\/(download|thumbnail)\//, '/_matrix/client/v1/media/$2/');
-          }
-          setRoomInfo({
-            name: room.name || 'Phòng chat',
-            avatar: avatarUrl || CONTACTS.kael.avatar,
-            members: room.getJoinedMemberCount() || 0
-          });
+    const client = getMatrixClient();
+    if (client && currentActiveRoomId) {
+      const room = client.getRoom(currentActiveRoomId);
+      if (room) {
+        let avatarUrl = room.getAvatarUrl(client.getHomeserverUrl(), 96, 96, 'crop', false, false);
+        if (avatarUrl) {
+          avatarUrl = avatarUrl.replace(/\/_matrix\/media\/(r0|v3)\/(download|thumbnail)\//, '/_matrix/client/v1/media/$2/');
         }
+        setRoomInfo({
+          name: room.name || 'Phòng chat',
+          avatar: avatarUrl || null,
+          members: room.getJoinedMemberCount() || 0
+        });
       }
+    }
 
-      const allMessages = getRoomMessages();
-      setMessages(allMessages.reverse());
-    });
-
-    return () => interactionPromise.cancel();
+    const allMessages = getRoomMessages();
+    setMessages(allMessages.reverse());
   }, []);
+
+  // Cuộn tới tin nhắn được tìm kiếm
+  useEffect(() => {
+    if (currentSearchTargetEventId && messages.length > 0) {
+      const index = messages.findIndex(m => m.id === currentSearchTargetEventId);
+      if (index !== -1) {
+        setTimeout(() => {
+          try {
+            flatListRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.5 });
+          } catch (e) {
+            console.log("Could not scroll to search target:", e);
+          }
+        }, 500);
+      }
+      // Đặt lại target để không cuộn khi nhắn tin mới
+      setSearchTarget(null, null);
+    }
+  }, [messages]);
 
   useEffect(() => {
     const client = getMatrixClient();
@@ -900,11 +913,21 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
     const room = client.getRoom(currentActiveRoomId);
     if (!room) return;
 
+    let debounceTimer: NodeJS.Timeout | null = null;
+    const updateMessagesDebounced = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        requestAnimationFrame(() => {
+          setMessages(getRoomMessages().reverse());
+        });
+      }, 300);
+    };
+
     const onTimelineEvent = (event: any, roomObj: any, toStartOfTimeline: boolean) => {
       if (event.getRoomId() !== currentActiveRoomId) return;
       if (toStartOfTimeline && !isHistoryLoadingRef.current) return;
 
-      setMessages(getRoomMessages().reverse());
+      updateMessagesDebounced();
 
       if (!toStartOfTimeline && room.timeline.length > 0) {
         client.sendReadReceipt(room.timeline[room.timeline.length - 1]);
@@ -913,7 +936,7 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
 
     const onDecrypted = (event: any) => {
       if (event.getRoomId() === currentActiveRoomId) {
-        setMessages(getRoomMessages().reverse());
+        updateMessagesDebounced();
       }
     };
 
@@ -939,7 +962,7 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
     const client = getMatrixClient();
     if (!client || !currentActiveRoomId || isHistoryLoadingRef.current) return;
     const room = client.getRoom(currentActiveRoomId);
-    
+
     if (room) {
       const timeline = room.getLiveTimeline();
       if (timeline.getPaginationToken("b")) {
@@ -968,7 +991,7 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
     const client = getMatrixClient();
     if (client && currentActiveRoomId) {
       const now = Date.now();
-      
+
       // Chuẩn Element: Chỉ cho phép gọi API Typing lên server nếu lần gọi trước đó cách nhau trên 5 giây
       if (now - lastTypingSentRef.current > 5000) {
         lastTypingSentRef.current = now;
@@ -1002,7 +1025,7 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
     const tempTxnId = 'txn_' + Date.now();
     const date = new Date();
     const currentTimeStr = date.getHours().toString().padStart(2, '0') + ':' + date.getMinutes().toString().padStart(2, '0');
-    
+
     const fakeTempMessage = {
       id: tempTxnId,
       sender: client.getUserId(),
@@ -1105,8 +1128,21 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
           </TouchableOpacity>
           <View className="flex-row items-center">
             <View className="relative mr-3">
-              <View className="w-10 h-10 rounded-full overflow-hidden border-2 border-secondary">
-                <Image source={{ uri: roomInfo.avatar }} className="w-full h-full" />
+              <View className={`w-10 h-10 rounded-full overflow-hidden items-center justify-center ${roomInfo.avatar ? 'border border-white/10' : ''}`}>
+                {roomInfo.avatar ? (
+                  <Image
+                    source={getMatrixClient()?.getAccessToken() && roomInfo.avatar.includes('_matrix')
+                      ? { uri: roomInfo.avatar, headers: { Authorization: `Bearer ${getMatrixClient()?.getAccessToken()}` } }
+                      : { uri: roomInfo.avatar }}
+                    className="w-full h-full"
+                  />
+                ) : (
+                  <View className="w-full h-full flex items-center justify-center" style={{ backgroundColor: getAvatarColor(currentActiveRoomId || '') }}>
+                    <Text className="text-[#17191C] text-lg font-bold" style={{ includeFontPadding: false, textAlignVertical: 'center' }}>
+                      {roomInfo.name ? roomInfo.name.charAt(0).toUpperCase() : '?'}
+                    </Text>
+                  </View>
+                )}
               </View>
               <View className="absolute bottom-0 right-0 w-3 h-3 bg-secondary rounded-full border-2 border-background"></View>
             </View>
@@ -1148,7 +1184,7 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
           ListFooterComponent={() => (
             <>
               {isLoadingHistory && <ActivityIndicator size="small" color="#0DBD8B" className="my-4" />}
-              <View className="h-24" /> 
+              <View className="h-24" />
             </>
           )}
           ListHeaderComponent={() => (
@@ -1190,7 +1226,7 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
       )}
 
       {showScrollDown && (
-        <TouchableOpacity 
+        <TouchableOpacity
           className="absolute right-5 w-10 h-10 bg-surface rounded-full flex items-center justify-center border border-white/10 shadow-xl z-[100]"
           style={{ bottom: 90 }}
           onPress={() => flatListRef.current?.scrollToOffset({ offset: 0, animated: true })}

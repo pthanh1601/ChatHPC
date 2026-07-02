@@ -37,6 +37,14 @@ export const setCurrentActiveRoomId = (id: string | null) => {
     globalStore.__currentActiveRoomId = id;
 };
 
+export let currentSearchTargetEventId: string | null = null;
+export let currentSearchQuery: string | null = null;
+
+export const setSearchTarget = (eventId: string | null, query: string | null) => {
+    currentSearchTargetEventId = eventId;
+    currentSearchQuery = query;
+};
+
 class MatrixService extends EventEmitter {
     public client: any = null;
     public homeserverUrl = MATRIX_BASE_URL;
@@ -384,7 +392,7 @@ class MatrixService extends EventEmitter {
         });
 
         await this.client.startClient({
-            initialSyncLimit: 20,
+            initialSyncLimit: 5,
             lazyLoadMembers: true
         });
 
