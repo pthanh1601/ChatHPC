@@ -200,15 +200,15 @@ export default function App() {
   useEffect(() => {
     let interval: NodeJS.Timeout;
     if (activeCall?.state === 'connected' || activeCall?.state === 'connecting') {
-        const start = activeCall.startTime || callStartTimeRef.current || Date.now();
-        if (!callStartTimeRef.current) callStartTimeRef.current = start;
-        
-        interval = setInterval(() => {
-            setCallDuration(Math.max(0, Math.floor((Date.now() - start) / 1000)));
-        }, 1000);
+      const start = activeCall.startTime || callStartTimeRef.current || Date.now();
+      if (!callStartTimeRef.current) callStartTimeRef.current = start;
+
+      interval = setInterval(() => {
+        setCallDuration(Math.max(0, Math.floor((Date.now() - start) / 1000)));
+      }, 1000);
     } else {
-        callStartTimeRef.current = null;
-        setCallDuration(0);
+      callStartTimeRef.current = null;
+      setCallDuration(0);
     }
     return () => clearInterval(interval);
   }, [activeCall?.state, activeCall?.startTime]);
@@ -246,15 +246,15 @@ export default function App() {
           {activeBaseScreen === 'profile' && <Profile setScreen={handleSetScreen} />}
           {activeBaseScreen === 'calls' && <Calls setScreen={handleSetScreen} />}
           {activeBaseScreen === 'search' && <Search setScreen={handleSetScreen} />}
-          
+
           {activeBaseScreen !== 'login' && <BottomNav currentScreen={activeBaseScreen} setScreen={handleSetScreen} />}
         </SafeScreen>
       </View>
 
       {/* LỚP 2: Lớp Chi Tiết (Phòng chat, Tạo nhóm...) trượt đè lên trên lớp nền */}
       {isDetailActive && (
-        <Animated.View 
-          style={{ flex: 1, transform: [{ translateX: slideAnim }] }} 
+        <Animated.View
+          style={{ flex: 1, transform: [{ translateX: slideAnim }] }}
           className="absolute w-full h-full bg-background shadow-2xl shadow-black/50 elevation-24 border-l border-white/5"
           {...panResponder.panHandlers}
         >
@@ -278,7 +278,7 @@ export default function App() {
 
       {/* Nút Bong bóng thu nhỏ khi đang gọi điện */}
       {activeCall && isCallMinimized && (
-        <Animated.View 
+        <Animated.View
           style={{
             transform: bubblePan.getTranslateTransform(),
             position: 'absolute',
@@ -288,34 +288,34 @@ export default function App() {
           }}
           {...bubblePanResponder.panHandlers}
         >
-          <TouchableOpacity 
+          <TouchableOpacity
             onPress={() => setIsCallMinimized(false)}
             className={`bg-card flex-row items-center justify-center shadow-2xl border border-white/20 overflow-hidden ${activeCall.type === 'video' && activeCall.remoteStream ? 'rounded-2xl' : 'rounded-full px-3'}`}
-            style={{ 
-              height: (activeCall.type === 'video' && activeCall.remoteStream) ? 240 : 56, 
+            style={{
+              height: (activeCall.type === 'video' && activeCall.remoteStream) ? 240 : 56,
               width: (activeCall.type === 'video' && activeCall.remoteStream) ? 160 : undefined,
-              minWidth: 56 
+              minWidth: 56
             }}
           >
             {activeCall.type === 'video' && activeCall.remoteStream ? (
-                <View className="absolute w-full h-full bg-black">
-                    <RTCView
-                        streamURL={activeCall.remoteStream.toURL()}
-                        style={{ width: '100%', height: '100%' }}
-                        objectFit="cover"
-                        zOrder={2}
-                    />
-                    <View className="absolute bottom-2 w-full items-center">
-                        <Text className="text-white text-xs font-bold px-2 py-0.5 bg-black/60 rounded overflow-hidden">{formatBubbleDuration(callDuration)}</Text>
-                    </View>
+              <View className="absolute w-full h-full bg-black">
+                <RTCView
+                  streamURL={activeCall.remoteStream.toURL()}
+                  style={{ width: '100%', height: '100%' }}
+                  objectFit="cover"
+                  zOrder={2}
+                />
+                <View className="absolute bottom-2 w-full items-center">
+                  <Text className="text-white text-xs font-bold px-2 py-0.5 bg-black/60 rounded overflow-hidden">{formatBubbleDuration(callDuration)}</Text>
                 </View>
+              </View>
             ) : (
-                <View className="items-center justify-center px-2">
-                    {(activeCall.state === 'connected' || activeCall.state === 'connecting') && callDuration > 0 ? (
-                    <Text className="text-white font-bold mb-1">{formatBubbleDuration(callDuration)}</Text>
-                    ) : null}
-                    {activeCall.type === 'video' ? <Video size={24} color="#03B381" /> : <Phone size={24} color="#0DBD8B" />}
-                </View>
+              <View className="items-center justify-center px-2">
+                {(activeCall.state === 'connected' || activeCall.state === 'connecting') && callDuration > 0 ? (
+                  <Text className="text-white font-bold mb-1">{formatBubbleDuration(callDuration)}</Text>
+                ) : null}
+                {activeCall.type === 'video' ? <Video size={24} color="#03B381" /> : <Phone size={24} color="#0DBD8B" />}
+              </View>
             )}
             <View className="absolute -top-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-background" />
           </TouchableOpacity>
