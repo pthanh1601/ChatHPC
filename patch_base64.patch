@@ -1,8 +1,0 @@
---- node_modules/react-native-quick-base64/react-native-quick-base64.podspec
-+++ node_modules/react-native-quick-base64/react-native-quick-base64.podspec
-@@ -17,5 +17,6 @@
-   s.private_header_files = "ios/**/*.h"
- 
-   install_modules_dependencies(s)
-+  s.dependency "React-bridging"
- end
