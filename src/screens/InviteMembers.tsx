@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, Image, ActivityIndicator, KeyboardAvoidingView, Platform, Keyboard, Modal } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, Image, ActivityIndicator, KeyboardAvoidingView, Platform, Keyboard, Modal, SafeAreaView, StatusBar } from 'react-native';
 import { Search, X, Plus, ChevronDown, Users } from 'lucide-react-native';
 import { AppScreen } from '../data';
 import { getMatrixClient, currentActiveRoomId, setCurrentActiveRoomId, matrixService } from '../services/MatrixService';
@@ -86,28 +86,30 @@ export function InviteMembers({ setScreen }: InviteMembersProps) {
       <ErrorPopup visible={errorVisible} message={popupMessage} onClose={() => setErrorVisible(false)} />
 
       {/* Header Search Bar */}
-      <View className="pt-14 pb-2 px-4 flex-row items-center bg-[#15191E]">
-        <View className="flex-1 bg-[#1C1C1E] border border-white/5 flex-row items-center px-3 h-[42px] rounded-xl mr-3">
-          <Search size={18} color="#8e8e93" />
-          <TextInput
-            className="flex-1 ml-2 text-[17px] text-white"
-            placeholder="Tìm / mời bằng ID Người dùng..."
-            placeholderTextColor="#8e8e93"
-            value={searchQuery}
-            onChangeText={handleSearch}
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-          {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => handleSearch('')}>
-              <X size={16} color="#8e8e93" className="bg-[#3f3f46] rounded-full p-0.5" />
-            </TouchableOpacity>
-          )}
+      <SafeAreaView className="bg-[#15191E]">
+        <View className="pt-4 pb-2 px-4 flex-row items-center" style={{ paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight || 20 : 16 }}>
+          <View className="flex-1 bg-[#1C1C1E] border border-white/5 flex-row items-center px-3 h-[42px] rounded-xl mr-3">
+            <Search size={18} color="#8e8e93" />
+            <TextInput
+              className="flex-1 ml-2 text-[17px] text-white"
+              placeholder="Tìm / mời bằng ID Người dùng..."
+              placeholderTextColor="#8e8e93"
+              value={searchQuery}
+              onChangeText={handleSearch}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            {searchQuery.length > 0 && (
+              <TouchableOpacity onPress={() => handleSearch('')} className="p-1">
+                <X size={18} color="#8e8e93" />
+              </TouchableOpacity>
+            )}
+          </View>
+          <TouchableOpacity onPress={() => setScreen(currentActiveRoomId ? 'chat_single' : 'chat_list')}>
+            <Text className="text-[#0DBD8B] text-[17px]">Hủy</Text>
+          </TouchableOpacity>
         </View>
-        <TouchableOpacity onPress={() => setScreen(currentActiveRoomId ? 'chat_single' : 'chat_list')}>
-          <Text className="text-[#0DBD8B] text-[17px]">Hủy</Text>
-        </TouchableOpacity>
-      </View>
+      </SafeAreaView>
 
       <ScrollView className="flex-1" keyboardShouldPersistTaps="handled">
         {searchQuery.length > 0 && (

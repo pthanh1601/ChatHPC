@@ -23,6 +23,7 @@ import { SafeScreen } from './components/SafeScreen';
 import { CreateRoom } from './screens/CreateRoom';
 import { InviteMembers } from './screens/InviteMembers';
 import { Invites } from './screens/Invites';
+import { ExploreRooms } from './screens/ExploreRooms';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -47,8 +48,8 @@ export default function App() {
   const bubblePan = useRef(new Animated.ValueXY()).current; // Lưu toạ độ kéo thả của bong bóng thu nhỏ
 
   const handleSetScreen = (screen: AppScreen) => {
-    const isDetail = ['chat_single', 'chat_group', 'create_room', 'invite_members', 'invites'].includes(screen);
-    const wasDetail = ['chat_single', 'chat_group', 'create_room', 'invite_members', 'invites'].includes(currentScreenRef.current);
+    const isDetail = ['chat_single', 'chat_group', 'create_room', 'invite_members', 'invites', 'explore_rooms'].includes(screen);
+    const wasDetail = ['chat_single', 'chat_group', 'create_room', 'invite_members', 'invites', 'explore_rooms'].includes(currentScreenRef.current);
 
     if (isDetail && !wasDetail) {
       // Mở trang chi tiết: Bắt đầu animation TRƯỚC, mount component SAU để không bị đơ
@@ -87,7 +88,7 @@ export default function App() {
   const panResponder = useRef(
     PanResponder.create({
       onMoveShouldSetPanResponderCapture: (evt, gestureState) => {
-        const isDetail = ['chat_single', 'chat_group', 'create_room', 'invite_members'].includes(currentScreenRef.current);
+        const isDetail = ['chat_single', 'chat_group', 'create_room', 'invite_members', 'explore_rooms'].includes(currentScreenRef.current);
         const isEdgeSwipe = evt.nativeEvent.pageX < 45;
         const isSwipingRight = gestureState.dx > 10 && Math.abs(gestureState.dy) < 25; // Chặn nhầm khi đang cuộn dọc
         return isDetail && isEdgeSwipe && isSwipingRight;
@@ -166,7 +167,7 @@ export default function App() {
   useEffect(() => {
     const backAction = () => {
       const screen = currentScreenRef.current;
-      if (['chat_single', 'chat_group', 'create_room', 'invite_members', 'invites'].includes(screen)) {
+      if (['chat_single', 'chat_group', 'create_room', 'invite_members', 'invites', 'explore_rooms'].includes(screen)) {
         handleSetScreen(baseScreenRef.current);
         return true; // Chặn hành động đóng app mặc định
       }
@@ -238,7 +239,7 @@ export default function App() {
     );
   }
 
-  const isDetailActive = ['chat_single', 'chat_group', 'create_room', 'invite_members', 'invites'].includes(currentScreen);
+  const isDetailActive = ['chat_single', 'chat_group', 'create_room', 'invite_members', 'invites', 'explore_rooms'].includes(currentScreen);
   const activeBaseScreen = isDetailActive ? baseScreen : currentScreen;
 
   return (
@@ -269,6 +270,7 @@ export default function App() {
             {delayedDetailScreen === 'create_room' && <CreateRoom setScreen={handleSetScreen} />}
             {delayedDetailScreen === 'invite_members' && <InviteMembers setScreen={handleSetScreen} />}
             {delayedDetailScreen === 'invites' && <Invites setScreen={handleSetScreen} />}
+            {delayedDetailScreen === 'explore_rooms' && <ExploreRooms setScreen={handleSetScreen} />}
             {!delayedDetailScreen && (
               <View className="flex-1 bg-background items-center justify-center">
                 <ActivityIndicator size="small" color="#0DBD8B" />

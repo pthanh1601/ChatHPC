@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator, Keyboard, Switch, Image } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator, Keyboard, Switch, Image, SafeAreaView, StatusBar } from 'react-native';
 import { Camera, Check, Info, Lock } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
@@ -49,6 +49,8 @@ export function CreateRoom({ setScreen }: CreateRoomProps) {
       return; // Khóa nút Tạo mới nếu chưa có tên
     }
 
+    setErrorVisible(false);
+    setSuccessVisible(false);
     setIsLoading(true);
 
     try {
@@ -103,11 +105,13 @@ export function CreateRoom({ setScreen }: CreateRoomProps) {
       }
 
       setPopupMessage('Đã khởi tạo không gian chat thành công!');
+      setErrorVisible(false);
       setSuccessVisible(true);
       setTimeout(() => setScreen('chat_single'), 1500);
     } catch (err: any) {
       console.log("Lỗi tạo phòng:", err);
       setPopupMessage(err.message || 'Có lỗi xảy ra khi tạo phòng. Vui lòng thử lại.');
+      setSuccessVisible(false);
       setErrorVisible(true);
     } finally {
       setIsLoading(false);
@@ -122,25 +126,27 @@ export function CreateRoom({ setScreen }: CreateRoomProps) {
       <ErrorPopup visible={errorVisible} message={popupMessage} onClose={() => setErrorVisible(false)} />
 
       {/* Header phong cách Element */}
-      <View className="pt-14 pb-4 px-4 flex-row items-center justify-between border-b border-white/5 bg-[#1A1D20]">
-        <TouchableOpacity onPress={() => setScreen('chat_list')} className="w-20">
-          <Text className="text-[#0DBD8B] text-[17px]">Huỷ</Text>
-        </TouchableOpacity>
+      <SafeAreaView className="bg-[#1A1D20]">
+        <View className="pb-4 px-4 flex-row items-center justify-between border-b border-white/5" style={{ paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 20) : 0 }}>
+          <TouchableOpacity onPress={() => setScreen('chat_list')} className="w-20">
+            <Text className="text-[#0DBD8B] text-[17px]">Huỷ</Text>
+          </TouchableOpacity>
 
-        <Text className="text-[17px] font-bold text-white flex-1 text-center">Phòng mới</Text>
+          <Text className="text-[17px] font-bold text-white flex-1 text-center">Phòng mới</Text>
 
-        <TouchableOpacity
-          onPress={handleCreateRoom}
-          disabled={!isFormValid || isLoading}
-          className="w-20 items-end"
-        >
-          {isLoading ? (
-            <ActivityIndicator color="#0DBD8B" size="small" />
-          ) : (
-            <Text className={`text-[17px] ${isFormValid ? 'text-[#0DBD8B]' : 'text-gray-500'}`}>Tạo mới</Text>
-          )}
-        </TouchableOpacity>
-      </View>
+          <TouchableOpacity
+            onPress={handleCreateRoom}
+            disabled={!isFormValid || isLoading}
+            className="w-20 items-end"
+          >
+            {isLoading ? (
+              <ActivityIndicator color="#0DBD8B" size="small" />
+            ) : (
+              <Text className={`text-[17px] ${isFormValid ? 'text-[#0DBD8B]' : 'text-gray-500'}`}>Tạo mới</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
 
       <ScrollView
         className="flex-1"

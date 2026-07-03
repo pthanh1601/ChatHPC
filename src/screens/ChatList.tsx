@@ -119,7 +119,14 @@ export function ChatList({ setScreen }: { setScreen: (s: AppScreen) => void }) {
   const getInitialChats = () => {
     const client = getMatrixClient();
     if (!client) return [];
-    const rooms = client.getVisibleRooms().filter(room => !leftRoomsLocal.has(room.roomId));
+    // Lấy tất cả phòng và tự lọc, tránh việc getVisibleRooms bỏ qua một số phòng
+    const rooms = client.getRooms().filter(room => {
+      const membership = room.getMyMembership();
+      // Hiện cả phòng đang tham gia (join), đang mời (invite), đã rời/bị kick (leave), và bị cấm (ban) để xem lịch sử
+      return (membership === 'join' || membership === 'invite' || membership === 'leave' || membership === 'ban') && 
+             !leftRoomsLocal.has(room.roomId) && 
+             !room.isSpaceRoom();
+    });
 
     const chatData = rooms.map(room => {
       const timeline = room.timeline;
@@ -209,25 +216,23 @@ export function ChatList({ setScreen }: { setScreen: (s: AppScreen) => void }) {
       clearTimeout(timeoutId);
       // Giới hạn tần suất xử lý để tránh đứng máy trong lúc Matrix đồng bộ lượng dữ liệu lớn
       timeoutId = setTimeout(() => {
-        // Sử dụng requestAnimationFrame để đẩy tác vụ render khỏi luồng animation (mượt mà khi vuốt/chạm)
-        requestAnimationFrame(() => {
-          const newChats = getInitialChats();
-          if (newChats.length === 0 && client.getSyncState() !== 'PREPARED') {
-            return;
-          }
-          setChats(newChats);
+        const newChats = getInitialChats();
+        if (newChats.length === 0 && client.getSyncState() !== 'PREPARED') {
+          return;
+        }
+        setChats(newChats);
 
-          // Tách việc ghi file JSON vào ổ đĩa ra xa, chỉ lưu mỗi 5 giây 1 lần để không block JS Thread
-          clearTimeout(storageTimeoutId);
-          storageTimeoutId = setTimeout(() => {
-            if (newChats.length > 0 || client.getSyncState() === 'PREPARED') {
-              persistentLocalStorage.setItem('cached_chat_list', JSON.stringify(newChats));
-            }
-          }, 5000);
-        });
+        // Tách việc ghi file JSON vào ổ đĩa ra xa, chỉ lưu mỗi 5 giây 1 lần để không block JS Thread
+        clearTimeout(storageTimeoutId);
+        storageTimeoutId = setTimeout(() => {
+          if (newChats.length > 0 || client.getSyncState() === 'PREPARED') {
+            persistentLocalStorage.setItem('cached_chat_list', JSON.stringify(newChats));
+          }
+        }, 5000);
       }, 800);
     };
 
+    client.on('Room' as any, updateChats);
     client.on('Room.timeline' as any, updateChats);
     client.on('sync' as any, updateChats);
     client.on('Room.myMembership' as any, updateChats);
@@ -238,6 +243,7 @@ export function ChatList({ setScreen }: { setScreen: (s: AppScreen) => void }) {
     return () => {
       clearTimeout(timeoutId);
       clearTimeout(storageTimeoutId);
+      client.removeListener('Room' as any, updateChats);
       client.removeListener('Room.timeline' as any, updateChats);
       client.removeListener('sync' as any, updateChats);
       client.removeListener('Room.myMembership' as any, updateChats);
@@ -248,9 +254,10 @@ export function ChatList({ setScreen }: { setScreen: (s: AppScreen) => void }) {
   const handleAcceptInvite = async (roomId: string) => {
     const client = getMatrixClient();
     if (!client) return;
+    joinedRoomsLocal.add(roomId);
+    matrixService.emit('force_chat_refresh');
     try {
       await client.joinRoom(roomId);
-      // Matrix sẽ tự động đồng bộ (sync) và chuyển nhóm này thành nhóm chính thức
     } catch (error) {
       console.log("Lỗi tham gia phòng:", error);
     }
@@ -259,8 +266,12 @@ export function ChatList({ setScreen }: { setScreen: (s: AppScreen) => void }) {
   const handleRejectInvite = async (roomId: string) => {
     const client = getMatrixClient();
     if (!client) return;
+    leftRoomsLocal.add(roomId);
+    matrixService.emit('force_chat_refresh');
     try {
       await client.leave(roomId);
+      // Gọi forget để server không trả về phòng này trong sync nữa (tránh hiện lại ở list)
+      await client.forget(roomId);
     } catch (error) {
       console.log("Lỗi từ chối phòng:", error);
     }

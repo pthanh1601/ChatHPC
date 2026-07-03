@@ -126,7 +126,12 @@ export function Header({ title, blurIntensity, setScreen, children, rightCompone
                 className="bg-card p-4 rounded-2xl flex-row items-center border border-white/5"
                 onPress={() => {
                   setModalVisible(false);
-                  // Thêm tính năng Khám phá phòng sau
+                  if (setScreen) {
+                    setTimeout(() => {
+                      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                      setScreen('explore_rooms' as AppScreen);
+                    }, 400);
+                  }
                 }}
               >
                 <View className="w-12 h-12 bg-purple-500/20 rounded-full flex items-center justify-center mr-4">

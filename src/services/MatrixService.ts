@@ -32,30 +32,31 @@ const { LocalStorageCryptoStore } = require('matrix-js-sdk/lib/crypto/store/loca
 // Lưu trữ ID phòng chat đang active để màn hình ChatSingle có thể sử dụng
 export let currentActiveRoomId: string | null = globalStore.__currentActiveRoomId || null;
 
+export let currentSearchTargetEventId: string | null = null;
+export let currentSearchTargetQuery: string | null = null;
+export let previewRoomInfo: any = null;
+
+
 export const setCurrentActiveRoomId = (id: string | null) => {
     currentActiveRoomId = id;
     globalStore.__currentActiveRoomId = id;
+    if (!id) previewRoomInfo = null; // reset preview info when clearing active room
 };
 
-export let currentSearchTargetEventId: string | null = null;
-export let currentSearchQuery: string | null = null;
+export const setPreviewRoomInfo = (info: any) => {
+    previewRoomInfo = info;
+};
 
 export const setSearchTarget = (eventId: string | null, query: string | null) => {
     currentSearchTargetEventId = eventId;
     currentSearchQuery = query;
 };
 
+export let currentSearchQuery: string | null = null;
+
 export const joinedRoomsLocal = new Set<string>();
 export const leftRoomsLocal = new Set<string>();
 
-// Xoá khỏi cache ẩn tạm thời khi Matrix chính thức đồng bộ trạng thái thật sự
-if (!globalStore.__hasMembershipListener) {
-    globalStore.__hasMembershipListener = true;
-    matrixClient.on('Room.myMembership' as any, (room: any, membership: string) => {
-        joinedRoomsLocal.delete(room.roomId);
-        leftRoomsLocal.delete(room.roomId);
-    });
-}
 
 export const getSystemMessageText = (event: any, room: any): string | null => {
   const type = event.getType();
@@ -335,6 +336,12 @@ class MatrixService extends EventEmitter {
             console.warn("⚠️ Access token is invalid/revoked, logging out...");
             await this.clearCache();
             this.emit('session.logged_out');
+        });
+
+        // Xoá khỏi cache ẩn tạm thời khi Matrix chính thức đồng bộ trạng thái thật sự
+        this.client.on('Room.myMembership' as any, (room: any, membership: string) => {
+            joinedRoomsLocal.delete(room.roomId);
+            leftRoomsLocal.delete(room.roomId);
         });
 
         globalStore.__matrixClient = this.client;

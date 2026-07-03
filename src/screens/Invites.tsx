@@ -12,10 +12,11 @@ export function Invites({ setScreen }: { setScreen: (s: AppScreen) => void }) {
   const loadInvites = () => {
     const client = getMatrixClient();
     if (!client) return;
-    const rooms = client.getVisibleRooms().filter(room => 
+    const rooms = client.getRooms().filter(room => 
       room.getMyMembership() === 'invite' && 
       !joinedRoomsLocal.has(room.roomId) && 
-      !leftRoomsLocal.has(room.roomId)
+      !leftRoomsLocal.has(room.roomId) &&
+      !room.isSpaceRoom()
     );
 
     const inviteData = rooms.map(room => {
@@ -94,6 +95,7 @@ export function Invites({ setScreen }: { setScreen: (s: AppScreen) => void }) {
 
     try {
       await client.leave(roomId);
+      await client.forget(roomId);
     } catch (error: any) {
       Alert.alert("Lỗi", "Không thể từ chối phòng: " + error.message);
     } finally {

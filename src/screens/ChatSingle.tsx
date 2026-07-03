@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { View, Text, Image, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform, ActivityIndicator, LayoutAnimation, UIManager, Keyboard, Alert, Linking, InteractionManager, FlatList } from 'react-native';
-import { ArrowLeft, Phone, Video, CheckCheck, Plus, Mic, Send, ChevronDown, ChevronUp, Image as ImageIcon, File as FileIcon, X, Play, Trash2, PhoneOff, UserPlus } from 'lucide-react-native';
+import { ArrowLeft, Phone, Video, Send, Plus, X, Image as ImageIcon, Camera, FileText, Reply, Pencil, Trash2, CheckCheck, Play, Pause, Smile, Download, UserPlus, Mic, ChevronDown, ChevronUp, File as FileIcon, PhoneOff } from 'lucide-react-native';
 import { Audio, Video as ExpoVideo, ResizeMode } from 'expo-av';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { AppScreen, CONTACTS, MEDIA } from '../data';
-import { getMatrixClient, setCurrentActiveRoomId, getSystemMessageText, setSearchTarget, currentSearchTargetEventId, currentSearchTargetQuery, currentActiveRoomId, matrixService } from '../services/MatrixService';
+import { getMatrixClient, setCurrentActiveRoomId, getSystemMessageText, setSearchTarget, currentSearchTargetEventId, currentSearchTargetQuery, currentActiveRoomId, matrixService, previewRoomInfo } from '../services/MatrixService';
 import { mediaService, decryptMatrixFile } from '../services/MediaService';
 import { voipService } from '../services/VoipService';
 import { Header } from '../components/Header';
@@ -349,7 +349,7 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
     const room = client.getRoom(currentActiveRoomId);
     if (!room) return [];
 
-    const mapped = room.timeline
+    let mapped = room.timeline
       .filter(e => {
         const type = e.getType();
         return type === 'm.room.message' || type === 'm.room.encrypted' || type === 'm.call.invite' ||
@@ -535,7 +535,7 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
 
   const [messages, setMessages] = useState<any[]>([]);
   const [isUiReady, setIsUiReady] = useState(true);
-  const [roomInfo, setRoomInfo] = useState<{ name: string, avatar: string | null, members: number }>({ name: 'Phòng chat', avatar: null, members: 0 });
+  const [roomInfo, setRoomInfo] = useState<{ name: string, avatar: string | null, members: number, topic?: string }>({ name: 'Phòng chat', avatar: null, members: 0 });
 
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [showScrollDown, setShowScrollDown] = useState(false);
@@ -543,6 +543,7 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
 
   const flatListRef = useRef<FlatList>(null);
   const isHistoryLoadingRef = useRef(false);
+  const hasForbiddenErrorRef = useRef(false); // Ngăn không cho load nữa nếu bị 403
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastTypingSentRef = useRef<number>(0);
 
@@ -979,10 +980,21 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
         if (avatarUrl) {
           avatarUrl = avatarUrl.replace(/\/_matrix\/media\/(r0|v3)\/(download|thumbnail)\//, '/_matrix/client/v1/media/$2/');
         }
+        const topicEvent = room.currentState.getStateEvents('m.room.topic', '');
+        const topic = topicEvent?.getContent()?.topic || '';
+
         setRoomInfo({
-          name: room.name || 'Phòng chat',
-          avatar: avatarUrl || null,
-          members: room.getJoinedMemberCount() || 0
+          name: room.name || previewRoomInfo?.name || 'Phòng chat',
+          avatar: avatarUrl || previewRoomInfo?.avatar || null,
+          members: room.getJoinedMemberCount() || previewRoomInfo?.memberCount || 0,
+          topic: topic || previewRoomInfo?.topic || ''
+        });
+      } else if (previewRoomInfo && previewRoomInfo.id === currentActiveRoomId) {
+        setRoomInfo({
+          name: previewRoomInfo.name,
+          avatar: previewRoomInfo.avatar,
+          members: previewRoomInfo.memberCount || 0,
+          topic: previewRoomInfo.topic || ''
         });
       }
     }
@@ -1049,20 +1061,38 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
       setTypingUsers(typing.map((m: any) => m.name || m.userId.split(':')[0].replace('@', '')));
     };
 
+    const onRoomState = (event: any, state: any) => {
+      if (event.getRoomId() === currentActiveRoomId) {
+        let avatarUrl = room.getAvatarUrl(client.getHomeserverUrl(), 96, 96, 'crop', false, false);
+        if (avatarUrl) avatarUrl = avatarUrl.replace(/\/_matrix\/media\/(r0|v3)\/(download|thumbnail)\//, '/_matrix/client/v1/media/$2/');
+        const topicEvent = room.currentState.getStateEvents('m.room.topic', '');
+        const topic = topicEvent?.getContent()?.topic || '';
+
+        setRoomInfo({
+          name: room.name || previewRoomInfo?.name || 'Phòng chat',
+          avatar: avatarUrl || previewRoomInfo?.avatar || null,
+          members: room.getJoinedMemberCount() || previewRoomInfo?.memberCount || 0,
+          topic: topic || previewRoomInfo?.topic || ''
+        });
+      }
+    };
+
     client.on('Room.timeline' as any, onTimelineEvent);
     client.on('Event.decrypted' as any, onDecrypted);
     client.on('RoomMember.typing' as any, onTyping);
+    client.on('RoomState.events' as any, onRoomState);
 
     return () => {
       client.removeListener('Room.timeline' as any, onTimelineEvent);
       client.removeListener('Event.decrypted' as any, onDecrypted);
       client.removeListener('RoomMember.typing' as any, onTyping);
+      client.removeListener('RoomState.events' as any, onRoomState);
     };
   }, []);
 
   const loadMoreHistory = async () => {
     const client = getMatrixClient();
-    if (!client || !currentActiveRoomId || isHistoryLoadingRef.current) return;
+    if (!client || !currentActiveRoomId || isHistoryLoadingRef.current || hasForbiddenErrorRef.current) return;
     const room = client.getRoom(currentActiveRoomId);
 
     if (room) {
@@ -1073,8 +1103,11 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
         try {
           await client.scrollback(room, 30);
           setMessages(getRoomMessages().reverse());
-        } catch (err) {
+        } catch (err: any) {
           console.log("Lỗi tải lịch sử cuộn:", err);
+          if (err.errcode === 'M_FORBIDDEN' || err.httpStatus === 403 || err.message?.includes('403')) {
+            hasForbiddenErrorRef.current = true; // Chặn spam request
+          }
         } finally {
           setIsLoadingHistory(false);
           isHistoryLoadingRef.current = false;
@@ -1248,14 +1281,23 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
               </View>
               <View className="absolute bottom-0 right-0 w-3 h-3 bg-secondary rounded-full border-2 border-background"></View>
             </View>
-            <View>
-              <Text className="text-xl font-bold text-primary">{roomInfo.name}</Text>
-              <Text className="text-xs font-medium text-secondary/80">{roomInfo.members} thành viên</Text>
+            <View className="flex-1">
+              <Text className="text-xl font-bold text-primary" numberOfLines={1}>{roomInfo.name}</Text>
+              {roomInfo.topic ? (
+                <Text className="text-xs font-medium text-secondary/80" numberOfLines={1}>
+                  {roomInfo.members} thành viên • {roomInfo.topic}
+                </Text>
+              ) : (
+                <Text className="text-xs font-medium text-secondary/80">{roomInfo.members} thành viên</Text>
+              )}
             </View>
           </View>
         </View>
         <View className="flex-row items-center">
-          <TouchableOpacity onPress={() => voipService.placeCall(currentActiveRoomId || '', 'voice')} className="mr-6">
+          <TouchableOpacity onPress={() => setScreen('invite_members')} className="mr-4">
+            <UserPlus size={24} color="#a0a0a0" />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => voipService.placeCall(currentActiveRoomId || '', 'voice')} className="mr-4">
             <Phone size={24} color="#a0a0a0" />
           </TouchableOpacity>
           <TouchableOpacity onPress={() => voipService.placeCall(currentActiveRoomId || '', 'video')}>
@@ -1282,7 +1324,7 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
           onEndReachedThreshold={0.1}
           keyboardDismissMode="interactive"
           keyboardShouldPersistTaps="handled"
-          contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 20, paddingBottom: 20 }}
+          contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 20, paddingBottom: 20, flexGrow: 1, justifyContent: 'flex-end' }}
           ListFooterComponent={() => {
             const client = getMatrixClient();
             const room = client?.getRoom(currentActiveRoomId || '');
@@ -1290,11 +1332,16 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
             const hasCreateEvent = liveEvents.some((e: any) => e.getType() === 'm.room.create');
             const hasMoreHistory = room ? (!!room.getLiveTimeline().getPaginationToken("b") && !hasCreateEvent) : false;
             
+            const hasRealMessage = messages.some(m => m.msgType !== 'm.system' && m.msgType !== 'm.system_group');
+            const shouldShowEmptyView = !hasMoreHistory || !hasRealMessage;
+
             return (
               <>
+                {/* Khoảng đệm để không bị Header đè lên khi danh sách bám lên sát màn hình */}
+                <View style={{ height: 110 }} />
                 {isLoadingHistory && <ActivityIndicator size="small" color="#0DBD8B" className="my-4" />}
-                {!hasMoreHistory && (
-                  <View className="items-center px-6 pt-32 pb-6">
+                {shouldShowEmptyView && (
+                  <View className="items-center px-6 pt-4 pb-6">
                     {roomInfo.avatar ? (
                       <Image 
                         source={getMatrixClient()?.getAccessToken() && roomInfo.avatar.includes('_matrix')
@@ -1311,9 +1358,15 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
                       </View>
                     )}
                     <Text className="text-white text-2xl font-bold mb-2 text-center">{roomInfo.name}</Text>
-                    <Text className="text-gray-400 text-center mb-6 text-sm">
-                      Đây là khởi đầu của <Text className="font-bold text-white">{roomInfo.name}</Text>. Thêm chủ đề để mọi người biết phòng này là gì.
-                    </Text>
+                    {roomInfo.topic ? (
+                      <Text className="text-gray-400 text-center mb-6 text-sm px-4">
+                        {roomInfo.topic}
+                      </Text>
+                    ) : (
+                      <Text className="text-gray-400 text-center mb-6 text-sm">
+                        Đây là khởi đầu của <Text className="font-bold text-white">{roomInfo.name}</Text>. Thêm chủ đề để mọi người biết phòng này là gì.
+                      </Text>
+                    )}
                     <TouchableOpacity
                       className="items-center mb-6"
                       onPress={() => setScreen('invite_members')}
@@ -1390,8 +1443,47 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
         </TouchableOpacity>
       )}
 
-      <View className="w-full z-50 px-5 pb-6 pt-4 bg-background/90">
-        {showAttachMenu && !isRecording && (
+      {(() => {
+        const client = getMatrixClient();
+        const room = client?.getRoom(currentActiveRoomId || '');
+        const myMembership = room?.getMember(client?.getUserId() || '')?.membership;
+        const isJoined = myMembership === 'join';
+
+        if (!isJoined) {
+          if (myMembership === 'leave' || myMembership === 'ban') {
+            return (
+              <View className="w-full z-50 px-5 pb-8 pt-4 bg-background/90 border-t border-white/5 items-center">
+                <Text className="text-[#ef4444] font-medium text-center">
+                  Bạn không còn ở trong phòng này.
+                </Text>
+              </View>
+            );
+          }
+
+          return (
+            <View className="w-full z-50 px-5 pb-8 pt-4 bg-background/90 border-t border-white/5 items-center">
+              <Text className="text-gray-400 mb-3 text-center">Bạn đang xem trước phòng này. Tham gia để trò chuyện.</Text>
+              <TouchableOpacity 
+                onPress={() => {
+                  client?.joinRoom(currentActiveRoomId || '').then(() => {
+                    Alert.alert("Thành công", "Đã tham gia phòng");
+                    setScreen('chat_list');
+                    setTimeout(() => setScreen('chat_single'), 100);
+                  }).catch(e => {
+                    Alert.alert("Lỗi", "Không thể tham gia phòng: " + e.message);
+                  });
+                }}
+                className="bg-primary py-3 px-8 rounded-full shadow-lg shadow-primary/30"
+              >
+                <Text className="text-[#22262E] font-bold text-base">Tham gia phòng</Text>
+              </TouchableOpacity>
+            </View>
+          );
+        }
+
+        return (
+          <View className="w-full z-50 px-5 pb-6 pt-4 bg-background/90">
+            {showAttachMenu && !isRecording && (
           <View className="pb-4 flex-row gap-6">
             <TouchableOpacity onPress={handlePickImage} className="items-center">
               <View className="w-12 h-12 bg-secondary/20 rounded-full flex items-center justify-center mb-2">
@@ -1463,6 +1555,8 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
           )}
         </View>
       </View>
+        );
+      })()}
     </KeyboardAvoidingView>
   );
 }
