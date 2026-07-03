@@ -3,6 +3,7 @@ import { View, Text, Image, TouchableOpacity, SafeAreaView, Platform, StatusBar,
 import { BlurView } from 'expo-blur';
 import { Plus, X, MessageSquarePlus, List, User, Hash } from 'lucide-react-native';
 import { AppScreen, USER_AVATAR } from '../data';
+import { setCurrentActiveRoomId } from '../services/MatrixService';
 
 interface HeaderProps {
   title?: string;
@@ -85,7 +86,8 @@ export function Header({ title, blurIntensity, setScreen, children, rightCompone
                 className="bg-card p-4 rounded-2xl flex-row items-center border border-white/5"
                 onPress={() => {
                   setModalVisible(false);
-                  // Thêm tính năng Bắt đầu chat (Direct Message) sau
+                  setCurrentActiveRoomId(null); // Clear active room so we create a new DM
+                  setScreen('invite_members');
                 }}
               >
                 <View className="w-12 h-12 bg-blue-500/20 rounded-full flex items-center justify-center mr-4">

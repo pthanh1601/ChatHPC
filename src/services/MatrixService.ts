@@ -45,6 +45,85 @@ export const setSearchTarget = (eventId: string | null, query: string | null) =>
     currentSearchQuery = query;
 };
 
+export const joinedRoomsLocal = new Set<string>();
+export const leftRoomsLocal = new Set<string>();
+
+// Xoá khỏi cache ẩn tạm thời khi Matrix chính thức đồng bộ trạng thái thật sự
+if (!globalStore.__hasMembershipListener) {
+    globalStore.__hasMembershipListener = true;
+    matrixClient.on('Room.myMembership' as any, (room: any, membership: string) => {
+        joinedRoomsLocal.delete(room.roomId);
+        leftRoomsLocal.delete(room.roomId);
+    });
+}
+
+export const getSystemMessageText = (event: any, room: any): string | null => {
+  const type = event.getType();
+  const senderId = event.getSender();
+  const senderName = room.getMember(senderId)?.name || senderId;
+
+  if (type === 'm.room.member') {
+    const content = event.getContent();
+    const prevContent = event.getPrevContent();
+    const targetId = event.getStateKey();
+    const targetName = room.getMember(targetId)?.name || targetId;
+
+    const membership = content.membership;
+    const prevMembership = prevContent?.membership;
+
+    if (membership === 'invite') {
+      return `${senderName} đã mời ${targetName}`;
+    } else if (membership === 'join') {
+      if (prevMembership !== 'join') {
+        return `${targetName} đã tham gia phòng`;
+      } else {
+        if (content.displayname !== prevContent?.displayname) {
+          const oldName = prevContent?.displayname || targetId;
+          const newName = content.displayname || targetId;
+          return `${oldName} đã đổi tên thành ${newName}`;
+        }
+        if (content.avatar_url !== prevContent?.avatar_url) {
+          return `${targetName} đã thay đổi ảnh đại diện`;
+        }
+      }
+    } else if (membership === 'leave') {
+      if (senderId === targetId) {
+        if (prevMembership === 'invite') {
+          return `${targetName} đã từ chối lời mời`;
+        }
+        return `${targetName} đã rời phòng`;
+      } else {
+        if (prevMembership === 'invite') {
+          return `${senderName} đã thu hồi lời mời đối với ${targetName}`;
+        }
+        return `${senderName} đã xoá ${targetName}`;
+      }
+    } else if (membership === 'ban') {
+      return `${senderName} đã cấm ${targetName}`;
+    }
+  } else if (type === 'm.room.name') {
+    const name = event.getContent().name;
+    const prevName = event.getPrevContent()?.name;
+    if (name) {
+      if (prevName) {
+        return `${senderName} đã đổi tên phòng thành "${name}"`;
+      } else {
+        return `${senderName} đã đặt tên phòng là "${name}"`;
+      }
+    } else {
+      return `${senderName} đã xóa tên phòng`;
+    }
+  } else if (type === 'm.room.avatar') {
+    return `${senderName} đã thay đổi ảnh phòng`;
+  } else if (type === 'm.room.topic') {
+    return `${senderName} đã thay đổi chủ đề phòng`;
+  } else if (type === 'm.room.create') {
+    return `${senderName} đã tạo phòng`;
+  }
+
+  return null;
+};
+
 class MatrixService extends EventEmitter {
     public client: any = null;
     public homeserverUrl = MATRIX_BASE_URL;

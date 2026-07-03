@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { View, Text, Image, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform, ActivityIndicator, LayoutAnimation, UIManager, Keyboard, Alert, Linking, InteractionManager, FlatList } from 'react-native';
-import { ArrowLeft, Phone, Video, CheckCheck, Plus, Mic, Send, ChevronDown, Image as ImageIcon, File as FileIcon, X, Play, Trash2, PhoneOff } from 'lucide-react-native';
+import { ArrowLeft, Phone, Video, CheckCheck, Plus, Mic, Send, ChevronDown, ChevronUp, Image as ImageIcon, File as FileIcon, X, Play, Trash2, PhoneOff, UserPlus } from 'lucide-react-native';
 import { Audio, Video as ExpoVideo, ResizeMode } from 'expo-av';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { AppScreen, CONTACTS, MEDIA } from '../data';
-import { getMatrixClient, currentActiveRoomId, matrixService, currentSearchTargetEventId, currentSearchQuery, setSearchTarget } from '../services/MatrixService';
+import { getMatrixClient, setCurrentActiveRoomId, getSystemMessageText, setSearchTarget, currentSearchTargetEventId, currentSearchTargetQuery, currentActiveRoomId, matrixService } from '../services/MatrixService';
 import { mediaService, decryptMatrixFile } from '../services/MediaService';
 import { voipService } from '../services/VoipService';
 import { Header } from '../components/Header';
@@ -298,6 +298,48 @@ const MatrixVideo = ({ url, client, info: fileInfo, eventId, mxcUrl, fileName }:
   );
 };
 
+const SystemMessageGroup = ({ msg }: { msg: any }) => {
+  const [expanded, setExpanded] = useState(false);
+  const items = msg.items || [];
+
+  const visibleItems = expanded ? items : items.slice(0, 3);
+  const hiddenCount = items.length - 3;
+
+  return (
+    <View className="flex-col w-full mb-4">
+      {visibleItems.map((item: any, idx: number) => (
+        <View key={item.id || idx} className="flex-row justify-center mb-1.5">
+          <View className="bg-white/10 px-4 py-1.5 rounded-full border border-white/5 max-w-[80%]">
+            <Text className="text-xs text-gray-400 font-medium text-center">{item.text}</Text>
+          </View>
+        </View>
+      ))}
+
+      {hiddenCount > 0 && !expanded && (
+        <TouchableOpacity
+          onPress={() => setExpanded(true)}
+          className="self-center mt-1 flex-row items-center gap-1"
+        >
+          <Text className="text-[12px] font-semibold text-gray-400 underline">
+            Xem thêm {hiddenCount} thay đổi
+          </Text>
+          <ChevronDown size={14} color="#9ca3af" />
+        </TouchableOpacity>
+      )}
+
+      {expanded && (
+        <TouchableOpacity
+          onPress={() => setExpanded(false)}
+          className="self-center mt-1 flex-row items-center gap-1"
+        >
+          <Text className="text-[12px] font-semibold text-primary">Thu gọn</Text>
+          <ChevronUp size={14} color="#0DBD8B" />
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+};
+
 export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void }) {
   const [inputText, setInputText] = useState('');
 
@@ -307,10 +349,12 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
     const room = client.getRoom(currentActiveRoomId);
     if (!room) return [];
 
-    return room.timeline
+    const mapped = room.timeline
       .filter(e => {
         const type = e.getType();
-        return type === 'm.room.message' || type === 'm.room.encrypted' || type === 'm.call.invite';
+        return type === 'm.room.message' || type === 'm.room.encrypted' || type === 'm.call.invite' ||
+          type === 'm.room.member' || type === 'm.room.name' || type === 'm.room.avatar' ||
+          type === 'm.room.topic' || type === 'm.room.create';
       })
       .map((e: any) => {
         const date = new Date(e.getTs());
@@ -324,6 +368,26 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
         let fileName = 'file';
 
         const type = e.getType();
+
+        // --- XỬ LÝ SYSTEM LOGS ---
+        if (['m.room.member', 'm.room.name', 'm.room.avatar', 'm.room.topic', 'm.room.create'].includes(type)) {
+          const sysText = getSystemMessageText(e, room);
+          return {
+            id: e.getId(),
+            sender: e.getSender(),
+            isMe: e.getSender() === client.getUserId(),
+            text: sysText || '',
+            time: time,
+            senderName: room.getMember(e.getSender())?.name || e.getSender(),
+            msgType: 'm.system',
+            mediaUrl: null,
+            mxcUrl: null,
+            fileName: '',
+            info: null,
+            matrixEvent: e
+          };
+        }
+        // -------------------------
 
         if (type === 'm.call.invite') {
           msgType = 'm.call';
@@ -428,7 +492,45 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
           info,
           matrixEvent: e
         };
+      })
+      .filter((msg: any) => !(msg.msgType === 'm.system' && !msg.text));
+
+    const grouped: any[] = [];
+    let currentGroup: any[] = [];
+
+    // Timeline đi từ cũ nhất tới mới nhất. 
+    for (let i = 0; i < mapped.length; i++) {
+      const msg = mapped[i];
+      if (msg.msgType === 'm.system') {
+        currentGroup.push(msg);
+      } else {
+        if (currentGroup.length > 3) {
+          grouped.push({
+            id: 'sys_group_' + currentGroup[0].id,
+            msgType: 'm.system_group',
+            items: currentGroup,
+            time: currentGroup[currentGroup.length - 1].time
+          });
+        } else {
+          grouped.push(...currentGroup);
+        }
+        currentGroup = [];
+        grouped.push(msg);
+      }
+    }
+
+    if (currentGroup.length > 3) {
+      grouped.push({
+        id: 'sys_group_' + currentGroup[0].id,
+        msgType: 'm.system_group',
+        items: currentGroup,
+        time: currentGroup[currentGroup.length - 1].time
       });
+    } else {
+      grouped.push(...currentGroup);
+    }
+
+    return grouped;
   };
 
   const [messages, setMessages] = useState<any[]>([]);
@@ -1181,12 +1283,52 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
           keyboardDismissMode="interactive"
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 20, paddingBottom: 20 }}
-          ListFooterComponent={() => (
-            <>
-              {isLoadingHistory && <ActivityIndicator size="small" color="#0DBD8B" className="my-4" />}
-              <View className="h-24" />
-            </>
-          )}
+          ListFooterComponent={() => {
+            const client = getMatrixClient();
+            const room = client?.getRoom(currentActiveRoomId || '');
+            const liveEvents = room?.getLiveTimeline().getEvents() || [];
+            const hasCreateEvent = liveEvents.some((e: any) => e.getType() === 'm.room.create');
+            const hasMoreHistory = room ? (!!room.getLiveTimeline().getPaginationToken("b") && !hasCreateEvent) : false;
+            
+            return (
+              <>
+                {isLoadingHistory && <ActivityIndicator size="small" color="#0DBD8B" className="my-4" />}
+                {!hasMoreHistory && (
+                  <View className="items-center px-6 pt-32 pb-6">
+                    {roomInfo.avatar ? (
+                      <Image 
+                        source={getMatrixClient()?.getAccessToken() && roomInfo.avatar.includes('_matrix')
+                          ? { uri: roomInfo.avatar, headers: { Authorization: `Bearer ${getMatrixClient()?.getAccessToken()}` } }
+                          : { uri: roomInfo.avatar }} 
+                        className="w-20 h-20 rounded-full mb-4 border border-white/10" 
+                      />
+                    ) : (
+                      <View 
+                        className="w-20 h-20 rounded-full flex items-center justify-center mb-4 border border-white/10"
+                        style={{ backgroundColor: getAvatarColor(currentActiveRoomId || '') }}
+                      >
+                        <Text className="text-[#17191C] text-3xl font-bold">{roomInfo.name ? roomInfo.name.charAt(0).toUpperCase() : '?'}</Text>
+                      </View>
+                    )}
+                    <Text className="text-white text-2xl font-bold mb-2 text-center">{roomInfo.name}</Text>
+                    <Text className="text-gray-400 text-center mb-6 text-sm">
+                      Đây là khởi đầu của <Text className="font-bold text-white">{roomInfo.name}</Text>. Thêm chủ đề để mọi người biết phòng này là gì.
+                    </Text>
+                    <TouchableOpacity
+                      className="items-center mb-6"
+                      onPress={() => setScreen('invite_members')}
+                    >
+                      <View className="w-14 h-14 bg-white rounded-full flex items-center justify-center mb-2">
+                        <UserPlus size={24} color="#000000" />
+                      </View>
+                      <Text className="text-white text-[15px] font-semibold">Thêm người</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+                <View className="h-8" />
+              </>
+            );
+          }}
           ListHeaderComponent={() => (
             typingUsers.length > 0 ? (
               <View className="flex-row items-center mt-2 mb-2 ml-2">
@@ -1197,6 +1339,19 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
             ) : null
           )}
           renderItem={({ item: msg }) => {
+            if (msg.msgType === 'm.system_group') {
+              return <SystemMessageGroup msg={msg} />;
+            }
+            if (msg.msgType === 'm.system') {
+              return (
+                <View className="flex-row justify-center mb-4">
+                  <View className="bg-white/10 px-4 py-1.5 rounded-full border border-white/5 max-w-[80%]">
+                    <Text className="text-xs text-gray-400 font-medium text-center">{msg.text}</Text>
+                  </View>
+                </View>
+              );
+            }
+
             const isMedia = msg.msgType === 'm.image' || msg.msgType === 'm.video';
             return msg.isMe ? (
               <View className="flex-col items-end max-w-[85%] self-end mb-4">

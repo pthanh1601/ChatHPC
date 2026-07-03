@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator, Keyboard, Switch } from 'react-native';
-import { Camera, Check } from 'lucide-react-native';
+import { View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator, Keyboard, Switch, Image } from 'react-native';
+import { Camera, Check, Info, Lock } from 'lucide-react-native';
+import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system';
 import { AppScreen } from '../data';
-import { getMatrixClient } from '../services/MatrixService';
+import { getMatrixClient, setCurrentActiveRoomId } from '../services/MatrixService';
 import { SuccessPopup } from '../components/SuccessPopup';
 import { ErrorPopup } from '../components/ErrorPopup';
 
@@ -22,6 +24,23 @@ export function CreateRoom({ setScreen }: CreateRoomProps) {
   const [successVisible, setSuccessVisible] = useState(false);
   const [errorVisible, setErrorVisible] = useState(false);
   const [popupMessage, setPopupMessage] = useState('');
+  const [avatarUri, setAvatarUri] = useState<string | null>(null);
+
+  const handlePickAvatar = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.5,
+      });
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        setAvatarUri(result.assets[0].uri);
+      }
+    } catch (e) {
+      console.log('User cancelled or error picking image', e);
+    }
+  };
 
   const handleCreateRoom = async () => {
     Keyboard.dismiss(); // Ẩn bàn phím ngay lập tức để tránh UI bị kẹt
@@ -36,10 +55,32 @@ export function CreateRoom({ setScreen }: CreateRoomProps) {
       const client = getMatrixClient();
       if (!client) throw new Error("Chưa kết nối đến Matrix Server");
 
+      let mxcUrl = undefined;
+      if (avatarUri) {
+        try {
+          const fileName = avatarUri.split('/').pop() || 'avatar.jpg';
+          const uploadUrl = `${client.getHomeserverUrl()}/_matrix/media/v3/upload?filename=${encodeURIComponent(fileName)}`;
+          const uploadResult = await FileSystem.uploadAsync(uploadUrl, avatarUri, {
+            headers: { 'Authorization': `Bearer ${client.getAccessToken()}`, 'Content-Type': 'image/jpeg' },
+            httpMethod: 'POST',
+            uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT
+          });
+          if (uploadResult.status === 200) {
+            mxcUrl = JSON.parse(uploadResult.body).content_uri;
+          }
+        } catch (e) {
+          console.warn("Lỗi upload avatar:", e);
+        }
+      }
+
       // Thiết lập mã hóa theo thiết lập của người dùng
-      const initialState = isEncrypted ? [
-        { type: "m.room.encryption", state_key: "", content: { algorithm: "m.megolm.v1.aes-sha2" } }
-      ] : undefined;
+      const initialState: any[] = [];
+      if (isEncrypted) {
+        initialState.push({ type: "m.room.encryption", state_key: "", content: { algorithm: "m.megolm.v1.aes-sha2" } });
+      }
+      if (mxcUrl) {
+        initialState.push({ type: "m.room.avatar", state_key: "", content: { url: mxcUrl } });
+      }
 
       // API tạo phòng của Matrix JS SDK, bọc trong Promise.race để chống treo API
       const createPromise = client.createRoom({
@@ -48,18 +89,22 @@ export function CreateRoom({ setScreen }: CreateRoomProps) {
         room_alias_name: isPublic && roomAlias.trim() ? roomAlias.trim() : undefined,
         visibility: (isPublic && showInDirectory) ? 'public' : 'private',
         preset: isPublic ? 'public_chat' : 'private_chat',
-        initial_state: initialState,
+        initial_state: initialState.length > 0 ? initialState : undefined,
       });
 
       const timeoutPromise = new Promise((_, reject) =>
         setTimeout(() => reject(new Error("Yêu cầu tạo phòng quá hạn (Server không phản hồi)")), 10000)
       );
 
-      await Promise.race([createPromise, timeoutPromise]);
+      const res = await Promise.race([createPromise, timeoutPromise]) as any;
+
+      if (res && res.room_id) {
+        setCurrentActiveRoomId(res.room_id);
+      }
 
       setPopupMessage('Đã khởi tạo không gian chat thành công!');
       setSuccessVisible(true);
-      setTimeout(() => setScreen('chat_list'), 1500);
+      setTimeout(() => setScreen('chat_single'), 1500);
     } catch (err: any) {
       console.log("Lỗi tạo phòng:", err);
       setPopupMessage(err.message || 'Có lỗi xảy ra khi tạo phòng. Vui lòng thử lại.');
@@ -104,8 +149,15 @@ export function CreateRoom({ setScreen }: CreateRoomProps) {
         <View className="pb-10 pt-6">
           {/* Upload Avatar */}
           <View className="items-center mb-6">
-            <TouchableOpacity className="w-24 h-24 bg-[#1C1C1E] rounded-full flex items-center justify-center relative overflow-hidden shadow-lg shadow-black/20 border border-white/5">
-              <Camera size={32} color="#6b7280" />
+            <TouchableOpacity 
+              onPress={handlePickAvatar}
+              className="w-24 h-24 bg-[#1C1C1E] rounded-full flex items-center justify-center relative overflow-hidden shadow-lg shadow-black/20 border border-white/5"
+            >
+              {avatarUri ? (
+                <Image source={{ uri: avatarUri }} className="w-full h-full" />
+              ) : (
+                <Camera size={32} color="#6b7280" />
+              )}
             </TouchableOpacity>
           </View>
 

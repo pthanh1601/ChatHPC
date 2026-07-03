@@ -2,7 +2,7 @@ import React, { useState, useEffect, memo } from 'react';
 import { View, Text, Image, TouchableOpacity, ScrollView, LayoutAnimation, Platform, UIManager, FlatList, TextInput, Keyboard } from 'react-native';
 import { Plus, CheckCheck, MessageSquarePlus, Search, X } from 'lucide-react-native';
 import { AppScreen, CONTACTS } from '../data';
-import { getMatrixClient, setCurrentActiveRoomId, setSearchTarget } from '../services/MatrixService';
+import { getMatrixClient, setCurrentActiveRoomId, getSystemMessageText, setSearchTarget, joinedRoomsLocal, leftRoomsLocal, matrixService } from '../services/MatrixService';
 import { persistentLocalStorage } from '../services/StorageService';
 import { Header } from '../components/Header';
 
@@ -119,12 +119,12 @@ export function ChatList({ setScreen }: { setScreen: (s: AppScreen) => void }) {
   const getInitialChats = () => {
     const client = getMatrixClient();
     if (!client) return [];
-    const rooms = client.getVisibleRooms();
+    const rooms = client.getVisibleRooms().filter(room => !leftRoomsLocal.has(room.roomId));
 
     const chatData = rooms.map(room => {
       const timeline = room.timeline;
       const lastEvent = timeline.length > 0 ? timeline[timeline.length - 1] : null;
-      const isInvite = room.getMyMembership() === 'invite';
+      const isInvite = room.getMyMembership() === 'invite' && !joinedRoomsLocal.has(room.roomId);
 
       let lastMessage = 'Chưa có tin nhắn';
       let time = '';
@@ -142,7 +142,12 @@ export function ChatList({ setScreen }: { setScreen: (s: AppScreen) => void }) {
           const clear = lastEvent.getClearContent();
           lastMessage = clear?.body || '🔒 Tin nhắn mã hóa';
         } else {
-          lastMessage = 'Có sự kiện mới';
+          const sysText = getSystemMessageText(lastEvent, room);
+          if (sysText) {
+            lastMessage = sysText;
+          } else {
+            lastMessage = 'Có sự kiện mới';
+          }
         }
         const date = new Date(lastEvent.getTs());
         const hours = date.getHours().toString().padStart(2, '0');
@@ -225,6 +230,8 @@ export function ChatList({ setScreen }: { setScreen: (s: AppScreen) => void }) {
 
     client.on('Room.timeline' as any, updateChats);
     client.on('sync' as any, updateChats);
+    client.on('Room.myMembership' as any, updateChats);
+    matrixService.on('force_chat_refresh', updateChats);
 
     updateChats();
 
@@ -233,6 +240,8 @@ export function ChatList({ setScreen }: { setScreen: (s: AppScreen) => void }) {
       clearTimeout(storageTimeoutId);
       client.removeListener('Room.timeline' as any, updateChats);
       client.removeListener('sync' as any, updateChats);
+      client.removeListener('Room.myMembership' as any, updateChats);
+      matrixService.removeListener('force_chat_refresh', updateChats);
     };
   }, []);
 
@@ -257,9 +266,14 @@ export function ChatList({ setScreen }: { setScreen: (s: AppScreen) => void }) {
     }
   };
 
+  const inviteChats = chats.filter(c => c.isInvite);
+  const inviteCount = inviteChats.length;
+
   const filteredChats = React.useMemo(() => {
     return chats.filter(c => {
-      const matchesFilter = filter === 'all' || (filter === 'unread' && (c.unread > 0 || c.isInvite));
+      if (c.isInvite) return false; // Không hiển thị invite ở list chính nữa
+
+      const matchesFilter = filter === 'all' || (filter === 'unread' && c.unread > 0);
       const searchLower = searchQuery.toLowerCase();
 
       let matchesSearch = c.name?.toLowerCase().includes(searchLower) || c.lastMessage?.toLowerCase().includes(searchLower);
@@ -351,6 +365,18 @@ export function ChatList({ setScreen }: { setScreen: (s: AppScreen) => void }) {
                 <Text className={`text-sm font-semibold ${filter === 'unread' ? 'text-surface' : 'text-gray-400'}`}>Chưa đọc</Text>
               </TouchableOpacity>
             </View>
+
+            {inviteCount > 0 && (
+              <TouchableOpacity 
+                className="flex-row items-center justify-between py-4 border-b border-white/5 mb-2"
+                onPress={() => setScreen('invites')}
+              >
+                <Text className="text-white text-lg font-bold">Mời</Text>
+                <View className="bg-red-500 rounded-full w-6 h-6 items-center justify-center">
+                  <Text className="text-white text-xs font-bold">{inviteCount}</Text>
+                </View>
+              </TouchableOpacity>
+            )}
           </>
         )}
         renderItem={({ item: chat }) => (
