@@ -305,7 +305,16 @@ export function ChatList({ setScreen }: { setScreen: (s: AppScreen) => void }) {
         keyboardShouldPersistTaps="always"
         ListHeaderComponent={(
           <>
-            <View className="flex-row p-1 bg-surface rounded-xl border border-white/5 mb-8 mt-4">
+            <TouchableOpacity 
+              className="flex-row items-center bg-surface rounded-2xl px-4 py-2.5 mb-2 mt-2"
+              onPress={() => setScreen('search')}
+              activeOpacity={0.8}
+            >
+              <Search size={20} color="#8e8e93" />
+              <Text className="text-[#8e8e93] text-[17px] ml-2">Tìm kiếm</Text>
+            </TouchableOpacity>
+
+            <View className="flex-row p-1 bg-surface rounded-xl border border-white/5 mb-8">
               <TouchableOpacity
                 className={`flex-1 py-2 rounded-lg items-center ${filter === 'all' ? 'bg-primary' : ''}`}
                 onPress={() => setFilter('all')}
