@@ -25,7 +25,7 @@ export const getAvatarColor = (id: string) => {
   return avatarColors[Math.abs(hash) % avatarColors.length];
 };
 
-const ChatItem = ({ chat, setScreen, handleAcceptInvite, handleRejectInvite }: any) => {
+export const ChatItem = ({ chat, setScreen, handleAcceptInvite, handleRejectInvite }: any) => {
   return (
     <View className="mb-4">
       <TouchableOpacity
@@ -101,7 +101,7 @@ const ChatItem = ({ chat, setScreen, handleAcceptInvite, handleRejectInvite }: a
   );
 };
 
-const MemoizedChatItem = memo(ChatItem, (prevProps, nextProps) => {
+export const MemoizedChatItem = memo(ChatItem, (prevProps, nextProps) => {
   return (
     prevProps.chat.id === nextProps.chat.id &&
     prevProps.chat.lastMessage === nextProps.chat.lastMessage &&
@@ -111,88 +111,88 @@ const MemoizedChatItem = memo(ChatItem, (prevProps, nextProps) => {
   );
 });
 
+
+export const getInitialChats = () => {
+  const client = getMatrixClient();
+  if (!client) return [];
+  // Lấy tất cả phòng và tự lọc, tránh việc getVisibleRooms bỏ qua một số phòng
+  const rooms = client.getRooms().filter(room => {
+    const membership = room.getMyMembership();
+    // Hiện cả phòng đang tham gia (join), đang mời (invite), đã rời/bị kick (leave), và bị cấm (ban) để xem lịch sử
+    return (membership === 'join' || membership === 'invite' || membership === 'leave' || membership === 'ban') && 
+           !leftRoomsLocal.has(room.roomId) && 
+           !room.isSpaceRoom();
+  });
+
+  const chatData = rooms.map(room => {
+    const timeline = room.timeline;
+    const lastEvent = timeline.length > 0 ? timeline[timeline.length - 1] : null;
+    const isInvite = room.getMyMembership() === 'invite' && !joinedRoomsLocal.has(room.roomId);
+
+    let lastMessage = 'Chưa có tin nhắn';
+    let time = '';
+
+    if (lastEvent) {
+      const type = lastEvent.getType();
+      if (type === 'm.room.message') {
+        lastMessage = lastEvent.getContent().body || 'Tin nhắn';
+      } else if (type === 'm.call.invite') {
+        const isVideo = lastEvent.getContent()?.offer?.sdp?.includes('m=video');
+        lastMessage = isVideo ? '📹 Cuộc gọi Video' : '📞 Cuộc gọi Thoại';
+      } else if (type === 'm.call.hangup') {
+        lastMessage = '📞 Cuộc gọi kết thúc';
+      } else if (lastEvent.isEncrypted && lastEvent.isEncrypted()) {
+        const clear = lastEvent.getClearContent();
+        lastMessage = clear?.body || '🔒 Tin nhắn mã hóa';
+      } else {
+        const sysText = getSystemMessageText(lastEvent, room);
+        if (sysText) {
+          lastMessage = sysText;
+        } else {
+          lastMessage = 'Có sự kiện mới';
+        }
+      }
+      const date = new Date(lastEvent.getTs());
+      const hours = date.getHours().toString().padStart(2, '0');
+      const mins = date.getMinutes().toString().padStart(2, '0');
+      time = `${hours}:${mins}`;
+    }
+
+    if (isInvite) {
+      lastMessage = 'Bạn nhận được lời mời tham gia nhóm';
+      time = time || 'Mới';
+    }
+
+    let avatar = room.getAvatarUrl(client.getHomeserverUrl(), 56, 56, 'crop', false, false);
+    if (avatar) {
+      avatar = avatar.replace(/\/_matrix\/media\/(r0|v3)\/(download|thumbnail)\//, '/_matrix/client/v1/media/$2/');
+    }
+
+    // Lấy số lượng tin nhắn chưa đọc (Bao gồm cả thông báo tag/highlight)
+    const unreadCount = room.getUnreadNotificationCount('total') || room.getUnreadNotificationCount('highlight') || 0;
+
+    return {
+      id: room.roomId,
+      name: room.name || 'Phòng chat',
+      avatar,
+      accessToken: client.getAccessToken(),
+      lastMessage,
+      lastEventId: lastEvent ? lastEvent.getId() : null,
+      time,
+      unread: isInvite ? 1 : unreadCount,
+      timestamp: lastEvent ? lastEvent.getTs() : (isInvite ? Date.now() : 0),
+      isInvite
+    };
+  });
+
+  chatData.sort((a, b) => b.timestamp - a.timestamp);
+
+  return chatData;
+};
+
 export function ChatList({ setScreen }: { setScreen: (s: AppScreen) => void }) {
   const [blurIntensity, setBlurIntensity] = useState(0);
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
-  const [searchQuery, setSearchQuery] = useState('');
-
-  const getInitialChats = () => {
-    const client = getMatrixClient();
-    if (!client) return [];
-    // Lấy tất cả phòng và tự lọc, tránh việc getVisibleRooms bỏ qua một số phòng
-    const rooms = client.getRooms().filter(room => {
-      const membership = room.getMyMembership();
-      // Hiện cả phòng đang tham gia (join), đang mời (invite), đã rời/bị kick (leave), và bị cấm (ban) để xem lịch sử
-      return (membership === 'join' || membership === 'invite' || membership === 'leave' || membership === 'ban') && 
-             !leftRoomsLocal.has(room.roomId) && 
-             !room.isSpaceRoom();
-    });
-
-    const chatData = rooms.map(room => {
-      const timeline = room.timeline;
-      const lastEvent = timeline.length > 0 ? timeline[timeline.length - 1] : null;
-      const isInvite = room.getMyMembership() === 'invite' && !joinedRoomsLocal.has(room.roomId);
-
-      let lastMessage = 'Chưa có tin nhắn';
-      let time = '';
-
-      if (lastEvent) {
-        const type = lastEvent.getType();
-        if (type === 'm.room.message') {
-          lastMessage = lastEvent.getContent().body || 'Tin nhắn';
-        } else if (type === 'm.call.invite') {
-          const isVideo = lastEvent.getContent()?.offer?.sdp?.includes('m=video');
-          lastMessage = isVideo ? '📹 Cuộc gọi Video' : '📞 Cuộc gọi Thoại';
-        } else if (type === 'm.call.hangup') {
-          lastMessage = '📞 Cuộc gọi kết thúc';
-        } else if (lastEvent.isEncrypted && lastEvent.isEncrypted()) {
-          const clear = lastEvent.getClearContent();
-          lastMessage = clear?.body || '🔒 Tin nhắn mã hóa';
-        } else {
-          const sysText = getSystemMessageText(lastEvent, room);
-          if (sysText) {
-            lastMessage = sysText;
-          } else {
-            lastMessage = 'Có sự kiện mới';
-          }
-        }
-        const date = new Date(lastEvent.getTs());
-        const hours = date.getHours().toString().padStart(2, '0');
-        const mins = date.getMinutes().toString().padStart(2, '0');
-        time = `${hours}:${mins}`;
-      }
-
-      if (isInvite) {
-        lastMessage = 'Bạn nhận được lời mời tham gia nhóm';
-        time = time || 'Mới';
-      }
-
-      let avatar = room.getAvatarUrl(client.getHomeserverUrl(), 56, 56, 'crop', false, false);
-      if (avatar) {
-        avatar = avatar.replace(/\/_matrix\/media\/(r0|v3)\/(download|thumbnail)\//, '/_matrix/client/v1/media/$2/');
-      }
-
-      // Lấy số lượng tin nhắn chưa đọc (Bao gồm cả thông báo tag/highlight)
-      const unreadCount = room.getUnreadNotificationCount('total') || room.getUnreadNotificationCount('highlight') || 0;
-
-      return {
-        id: room.roomId,
-        name: room.name || 'Phòng chat',
-        avatar,
-        accessToken: client.getAccessToken(),
-        lastMessage,
-        lastEventId: lastEvent ? lastEvent.getId() : null,
-        time,
-        unread: isInvite ? 1 : unreadCount,
-        timestamp: lastEvent ? lastEvent.getTs() : (isInvite ? Date.now() : 0),
-        isInvite
-      };
-    });
-
-    chatData.sort((a, b) => b.timestamp - a.timestamp);
-
-    return chatData;
-  };
 
   // Khởi tạo state ngay từ đầu để tránh màn hình bị nháy trống trơn lúc mới load
   const [chats, setChats] = useState<any[]>(() => {
@@ -284,44 +284,9 @@ export function ChatList({ setScreen }: { setScreen: (s: AppScreen) => void }) {
     return chats.filter(c => {
       if (c.isInvite) return false; // Không hiển thị invite ở list chính nữa
 
-      const matchesFilter = filter === 'all' || (filter === 'unread' && c.unread > 0);
-      const searchLower = searchQuery.toLowerCase();
-
-      let matchesSearch = c.name?.toLowerCase().includes(searchLower) || c.lastMessage?.toLowerCase().includes(searchLower);
-
-      if (matchesSearch && searchQuery.trim().length > 0) {
-        c.matchedEventId = c.lastEventId;
-        c.searchQuery = searchQuery;
-      }
-
-      // Tìm kiếm sâu vào bộ nhớ tạm (timeline) của phòng chat nếu chưa thấy
-      if (!matchesSearch && searchQuery.trim().length > 0) {
-        const client = getMatrixClient();
-        const room = client?.getRoom(c.id);
-        if (room) {
-          const events = room.timeline;
-          for (let i = events.length - 1; i >= 0; i--) {
-            const event = events[i];
-            if (event.getType() === 'm.room.message') {
-              let body = event.getContent().body;
-              if (event.isEncrypted && event.isEncrypted()) {
-                const clear = event.getClearContent();
-                if (clear && clear.body) body = clear.body;
-              }
-              if (body && body.toLowerCase().includes(searchLower)) {
-                matchesSearch = true;
-                c.matchedEventId = event.getId();
-                c.searchQuery = searchQuery;
-                break;
-              }
-            }
-          }
-        }
-      }
-
-      return matchesFilter && matchesSearch;
+      return filter === 'all' || (filter === 'unread' && c.unread > 0);
     });
-  }, [chats, filter, searchQuery]);
+  }, [chats, filter]);
 
   return (
     <View className="flex-1 bg-background">
@@ -340,29 +305,7 @@ export function ChatList({ setScreen }: { setScreen: (s: AppScreen) => void }) {
         keyboardShouldPersistTaps="always"
         ListHeaderComponent={(
           <>
-            <View className="flex-row items-center mt-2 mb-4">
-              <View className="flex-1 flex-row items-center bg-surface rounded-xl px-4 py-3 border border-white/5">
-                <Search size={20} color="#a0a0a0" />
-                <TextInput
-                  placeholder="Tìm kiếm..."
-                  placeholderTextColor="#a0a0a0"
-                  className="flex-1 ml-2 text-white font-medium"
-                  style={{ includeFontPadding: false, padding: 0 }}
-                  value={searchQuery}
-                  onChangeText={setSearchQuery}
-                />
-                {searchQuery.length > 0 && (
-                  <TouchableOpacity onPress={() => {
-                    setSearchQuery('');
-                    Keyboard.dismiss();
-                  }} className="p-1">
-                    <X size={18} color="#a0a0a0" />
-                  </TouchableOpacity>
-                )}
-              </View>
-            </View>
-
-            <View className="flex-row p-1 bg-surface rounded-xl border border-white/5 mb-8">
+            <View className="flex-row p-1 bg-surface rounded-xl border border-white/5 mb-8 mt-4">
               <TouchableOpacity
                 className={`flex-1 py-2 rounded-lg items-center ${filter === 'all' ? 'bg-primary' : ''}`}
                 onPress={() => setFilter('all')}

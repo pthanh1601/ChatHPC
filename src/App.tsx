@@ -253,7 +253,7 @@ export default function App() {
           {activeBaseScreen === 'calls' && <Calls setScreen={handleSetScreen} />}
           {activeBaseScreen === 'search' && <Search setScreen={handleSetScreen} />}
 
-          {activeBaseScreen !== 'login' && <BottomNav currentScreen={activeBaseScreen} setScreen={handleSetScreen} />}
+          {activeBaseScreen !== 'login' && activeBaseScreen !== 'search' && <BottomNav currentScreen={activeBaseScreen} setScreen={handleSetScreen} />}
         </SafeScreen>
       </View>
 

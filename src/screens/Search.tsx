@@ -1,105 +1,145 @@
-import { useState } from 'react';
-import { View, Text, Image, TouchableOpacity, ScrollView, Platform, TextInput, LayoutAnimation, UIManager } from 'react-native';
-import { Search as SearchIcon, X, Clock, UserPlus } from 'lucide-react-native';
-import { AppScreen, CONTACTS } from '../data';
-import { Header } from '../components/Header';
+import React, { useState, useEffect, useMemo } from 'react';
+import { View, Text, TouchableOpacity, Platform, TextInput, FlatList, KeyboardAvoidingView, ScrollView, SafeAreaView, StatusBar } from 'react-native';
+import { Search as SearchIcon, X } from 'lucide-react-native';
+import { AppScreen } from '../data';
+import { getMatrixClient } from '../services/MatrixService';
+import { getInitialChats, MemoizedChatItem } from './ChatList';
 
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
+const SEARCH_TABS = ['Chats', 'Channels', 'Apps', 'Posts', 'Media', 'Links'];
 
 export function Search({ setScreen }: { setScreen: (s: AppScreen) => void }) {
-  const [blurIntensity, setBlurIntensity] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
-  const [isSearchExpanded, setIsSearchExpanded] = useState(false);
+  const [activeTab, setActiveTab] = useState('Chats');
+  const [allChats, setAllChats] = useState<any[]>([]);
 
-  const toggleSearch = () => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setIsSearchExpanded(!isSearchExpanded);
-    if (isSearchExpanded) {
-      setSearchQuery('');
-    }
-  };
+  useEffect(() => {
+    // Fetch all chats once when Search screen is mounted
+    setAllChats(getInitialChats());
+  }, []);
+
+  const filteredChats = useMemo(() => {
+    if (searchQuery.trim().length === 0) return [];
+    
+    const searchLower = searchQuery.toLowerCase();
+    
+    return allChats.filter(c => {
+      if (c.isInvite) return false;
+
+      let matchesSearch = c.name?.toLowerCase().includes(searchLower) || c.lastMessage?.toLowerCase().includes(searchLower);
+
+      if (matchesSearch) {
+        c.matchedEventId = c.lastEventId;
+        c.searchQuery = searchQuery;
+      }
+
+      // Search deep into the timeline
+      if (!matchesSearch) {
+        const client = getMatrixClient();
+        const room = client?.getRoom(c.id);
+        if (room) {
+          const events = room.timeline;
+          for (let i = events.length - 1; i >= 0; i--) {
+            const event = events[i];
+            if (event.getType() === 'm.room.message') {
+              let body = event.getContent().body;
+              if (event.isEncrypted && event.isEncrypted()) {
+                const clear = event.getClearContent();
+                if (clear && clear.body) body = clear.body;
+              }
+              if (body && body.toLowerCase().includes(searchLower)) {
+                matchesSearch = true;
+                c.matchedEventId = event.getId();
+                c.searchQuery = searchQuery;
+                break;
+              }
+            }
+          }
+        }
+      }
+
+      return matchesSearch;
+    });
+  }, [allChats, searchQuery]);
 
   return (
-    <View className="flex-1 bg-background">
-      <Header blurIntensity={blurIntensity}>
-        {!isSearchExpanded && (
-          <Text className="text-2xl font-bold text-primary mr-4">Tìm kiếm</Text>
-        )}
-        <View className={`flex-row items-center justify-end ${isSearchExpanded ? 'flex-1' : ''}`}>
-          {isSearchExpanded ? (
-            <View className="flex-1 flex-row items-center gap-3 bg-card rounded-2xl p-2 border border-white/10">
-              <SearchIcon size={20} color="#a0a0a0" className="ml-2" />
-              <TextInput 
-                placeholder="Tìm kiếm đồng nghiệp, nhóm..." 
-                placeholderTextColor="#a0a0a0"
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-                className="flex-1 text-base text-white p-0 h-8"
-                autoFocus
-              />
-              <TouchableOpacity onPress={toggleSearch} className="p-1">
-                <X size={18} color="#a0a0a0" />
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <TouchableOpacity onPress={toggleSearch}>
-              <SearchIcon size={24} color="#0DBD8B" />
-            </TouchableOpacity>
-          )}
-        </View>
-      </Header>
-
-      <ScrollView 
-        className="flex-1 px-5" 
-        contentContainerStyle={{ paddingTop: 100, paddingBottom: 120 }}
-        onScroll={(e) => setBlurIntensity(Math.min(100, Math.max(0, e.nativeEvent.contentOffset.y)))}
-        scrollEventThrottle={16}
+    <SafeAreaView className="flex-1 bg-background" style={{ paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0 }}>
+      <KeyboardAvoidingView 
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        className="flex-1 bg-background"
       >
-        <Text className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-4">Tìm kiếm gần đây</Text>
-        
-        <View className="gap-4 mb-8">
-          <TouchableOpacity className="flex-row items-center">
-            <View className="w-10 h-10 bg-surface rounded-full flex items-center justify-center border border-white/5 mr-3">
-              <Clock size={16} color="#a0a0a0" />
-            </View>
-            <Text className="text-base text-white flex-1">Nhóm Cyber Nexus</Text>
-            <TouchableOpacity>
-              <X size={16} color="#a0a0a0" />
-            </TouchableOpacity>
-          </TouchableOpacity>
-          
-          <TouchableOpacity className="flex-row items-center">
-            <View className="w-10 h-10 bg-surface rounded-full flex items-center justify-center border border-white/5 mr-3">
-              <Clock size={16} color="#a0a0a0" />
-            </View>
-            <Text className="text-base text-white flex-1">Nova</Text>
-            <TouchableOpacity>
-              <X size={16} color="#a0a0a0" />
-            </TouchableOpacity>
-          </TouchableOpacity>
+      <View className="flex-1 pt-4 px-2">
+        {searchQuery.trim().length > 0 ? (
+          <FlatList
+            data={filteredChats}
+            keyExtractor={item => item.id}
+            className="flex-1"
+            contentContainerStyle={{ paddingBottom: 20 }}
+            keyboardShouldPersistTaps="always"
+            renderItem={({ item: chat }) => (
+              <MemoizedChatItem
+                chat={chat}
+                setScreen={setScreen}
+                handleAcceptInvite={() => {}}
+                handleRejectInvite={() => {}}
+              />
+            )}
+            ListEmptyComponent={() => (
+              <Text className="text-[#8e8e93] text-center mt-8 text-base">No results found</Text>
+            )}
+          />
+        ) : (
+          <View className="flex-1" />
+        )}
+      </View>
+
+      <View className="pb-4 px-3">
+        {/* Tabs Row */}
+        <View className="flex-row items-center mb-3">
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row">
+            {SEARCH_TABS.map(tab => (
+              <TouchableOpacity
+                key={tab}
+                onPress={() => setActiveTab(tab)}
+                className={`px-4 py-1.5 rounded-full mr-1 ${activeTab === tab ? 'bg-surface' : ''}`}
+              >
+                <Text className={`text-[15px] font-medium ${activeTab === tab ? 'text-white' : 'text-[#8e8e93]'}`}>
+                  {tab}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
         </View>
 
-        <Text className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-4">Gợi ý liên hệ</Text>
-        
-        <View className="gap-4">
-          {[CONTACTS.luna, CONTACTS.nova].map((contact, i) => (
-            <TouchableOpacity key={i} className="bg-card rounded-2xl p-4 flex-row items-center border border-white/5" onPress={() => setScreen('chat_single')}>
-              <View className="w-12 h-12 rounded-full overflow-hidden border border-white/10 mr-3">
-                <Image source={{ uri: contact.avatar }} className="w-full h-full" />
-              </View>
-              <View className="flex-1 justify-center ml-1">
-                <Text className="font-bold text-[15px] text-white">{contact.name}</Text>
-                <Text className="text-sm text-gray-400 mt-0.5">Đồng nghiệp</Text>
-              </View>
-              <TouchableOpacity className="w-10 h-10 bg-primary/20 rounded-full flex items-center justify-center border border-primary/30">
-                <UserPlus size={18} color="#0DBD8B" />
-              </TouchableOpacity>
-            </TouchableOpacity>
-          ))}
+        {/* Search Input Row */}
+        <View className="flex-row items-center">
+          <View className="flex-1 bg-surface rounded-full flex-row items-center px-4 h-11">
+            <SearchIcon size={20} color="#8e8e93" />
+            <TextInput 
+              placeholder="Search" 
+              placeholderTextColor="#8e8e93"
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              className="flex-1 text-white text-[17px] ml-2 h-full"
+              style={{ paddingVertical: 0 }}
+              autoFocus
+            />
+          </View>
+          <TouchableOpacity 
+            onPress={() => {
+              if (searchQuery.length > 0) {
+                setSearchQuery('');
+              } else {
+                setScreen('chat_list');
+              }
+            }} 
+            className="w-11 h-11 bg-surface rounded-full ml-3 items-center justify-center"
+          >
+            <X size={22} color="#8e8e93" />
+          </TouchableOpacity>
         </View>
-      </ScrollView>
-    </View>
+      </View>
+    </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
+
