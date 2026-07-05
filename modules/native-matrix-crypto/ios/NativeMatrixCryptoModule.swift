@@ -1,6 +1,7 @@
 import ExpoModulesCore
 import Foundation
 import CommonCrypto
+import AVFoundation
 
 public class NativeMatrixCryptoModule: Module {
   public func definition() -> ModuleDefinition {
@@ -13,6 +14,73 @@ public class NativeMatrixCryptoModule: Module {
           promise.resolve(result)
         } catch {
           promise.reject("ENCRYPTION_ERROR", error.localizedDescription)
+        }
+      }
+    }
+
+    AsyncFunction("compressVideo") { (inputPath: String, outputPath: String, maxFileSizeMB: Int, promise: Promise) in
+      let cleanInputPath = inputPath.replacingOccurrences(of: "file://", with: "")
+      let cleanOutputPath = outputPath.replacingOccurrences(of: "file://", with: "")
+      let inputURL = URL(fileURLWithPath: cleanInputPath)
+      let outputURL = URL(fileURLWithPath: cleanOutputPath)
+      
+      let asset = AVAsset(url: inputURL)
+      
+      // Default to 1080p, like Element iOS
+      var presetName = AVAssetExportPreset1920x1080
+      
+      // Calculate estimated size for 1080p
+      if let session1080 = AVAssetExportSession(asset: asset, presetName: presetName) {
+          session1080.timeRange = CMTimeRangeMake(start: .zero, duration: asset.duration)
+          let estimated1080 = session1080.estimatedOutputFileLength
+          
+          if estimated1080 > Int64(maxFileSizeMB) * 1024 * 1024 {
+              // Fallback to 720p if 1080p is too big
+              presetName = AVAssetExportPreset1280x720
+              
+              if let session720 = AVAssetExportSession(asset: asset, presetName: presetName) {
+                  session720.timeRange = CMTimeRangeMake(start: .zero, duration: asset.duration)
+                  if session720.estimatedOutputFileLength > Int64(maxFileSizeMB) * 1024 * 1024 {
+                      // Fallback to medium if 720p is still too big
+                      presetName = AVAssetExportPresetMediumQuality
+                  }
+              }
+          }
+      }
+      
+      guard let exportSession = AVAssetExportSession(asset: asset, presetName: presetName) else {
+        promise.reject("COMPRESSION_ERROR", "Cannot create export session")
+        return
+      }
+      
+      try? FileManager.default.removeItem(at: outputURL)
+      
+      exportSession.outputURL = outputURL
+      exportSession.outputFileType = .mp4
+      exportSession.shouldOptimizeForNetworkUse = true
+      
+      exportSession.exportAsynchronously {
+        switch exportSession.status {
+        case .completed:
+          do {
+              let attr = try FileManager.default.attributesOfItem(atPath: cleanOutputPath)
+              let fileSize = attr[.size] as? UInt64 ?? 0
+              promise.resolve([
+                  "uri": "file://" + cleanOutputPath,
+                  "size": fileSize
+              ])
+          } catch {
+              promise.resolve([
+                  "uri": "file://" + cleanOutputPath,
+                  "size": 0
+              ])
+          }
+        case .failed:
+          promise.reject("COMPRESSION_ERROR", exportSession.error?.localizedDescription ?? "Unknown error")
+        case .cancelled:
+          promise.reject("COMPRESSION_ERROR", "Export cancelled")
+        default:
+          promise.reject("COMPRESSION_ERROR", "Export failed with status \(exportSession.status.rawValue)")
         }
       }
     }

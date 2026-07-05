@@ -4,6 +4,13 @@ import { ArrowLeft, Phone, Video, Send, Plus, X, Image as ImageIcon, Camera, Fil
 import { Audio, Video as ExpoVideo, ResizeMode } from 'expo-av';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
+
+let NativeMatrixCrypto: any = null;
+try {
+  NativeMatrixCrypto = require('../../modules/native-matrix-crypto/src/NativeMatrixCryptoModule').default;
+} catch (e) {
+  console.log('NativeMatrixCryptoModule not available in ChatSingle:', e);
+}
 import { AppScreen, CONTACTS, MEDIA } from '../data';
 import { getMatrixClient, setCurrentActiveRoomId, getSystemMessageText, setSearchTarget, currentSearchTargetEventId, currentSearchTargetQuery, currentActiveRoomId, matrixService, previewRoomInfo } from '../services/MatrixService';
 import { mediaService, decryptMatrixFile } from '../services/MediaService';
@@ -627,10 +634,40 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
                 asset.fileSize = fileInfo.size;
                 console.log(`Dung lượng video (1080p) ${item.fileName}:`, asset.fileSize);
 
-                if (asset.fileSize > 50 * 1024 * 1024) {
-                  Alert.alert("Lỗi", `Video ${item.fileName} lớn hơn 50MB. Đã bỏ qua file này.`);
-                  setMessages(prev => prev.map(m => m.id === item.tempEventId ? { ...m, status: 'failed' } : m));
-                  continue; // Skip this file and go to next
+                if (asset.fileSize > 48 * 1024 * 1024) { // Dùng mốc 48MB cho an toàn
+                  if (NativeMatrixCrypto) {
+                    console.log(`Video quá lớn (${asset.fileSize} bytes). Bắt đầu ép dung lượng bằng Native như Element...`);
+                    let tempOutPath = FileSystem.cacheDirectory + 'compressed_' + Date.now() + '.mp4';
+                    
+                    try {
+                      // Gọi Native module (đã được viết giống Element: ưu tiên 1080p, nếu vẫn to sẽ hạ xuống 720p hoặc Medium)
+                      const compressedResult = await NativeMatrixCrypto.compressVideo(asset.uri, tempOutPath, 48);
+                      
+                      const newFileInfo = await FileSystem.getInfoAsync(compressedResult.uri);
+                      if (newFileInfo.exists && newFileInfo.size > 0) {
+                        asset.uri = compressedResult.uri;
+                        asset.fileSize = newFileInfo.size;
+                        console.log(`Ép dung lượng bằng Swift Native thành công: ${asset.fileSize} bytes`);
+                        
+                        // Kiểm tra lại sau khi nén
+                        if (asset.fileSize > 50 * 1024 * 1024) {
+                          Alert.alert("Lỗi", `Video ${item.fileName} vẫn lớn hơn 50MB sau khi nén. Đã bỏ qua file này.`);
+                          setMessages(prev => prev.map(m => m.id === item.tempEventId ? { ...m, status: 'failed' } : m));
+                          continue;
+                        }
+                      }
+                    } catch (compressError) {
+                      console.warn("Lỗi khi nén video bằng Native:", compressError);
+                      Alert.alert("Lỗi nén video", "Không thể nén video này. Vui lòng chọn video ngắn hơn.");
+                      setMessages(prev => prev.map(m => m.id === item.tempEventId ? { ...m, status: 'failed' } : m));
+                      continue;
+                    }
+                  } else {
+                    console.log(`Video quá lớn (${asset.fileSize} bytes) nhưng NativeMatrixCrypto không khả dụng để nén.`);
+                    Alert.alert("Lỗi", `Video ${item.fileName} lớn hơn 50MB. Ứng dụng cần được Build (Dev Client) để hỗ trợ nén video lớn.`);
+                    setMessages(prev => prev.map(m => m.id === item.tempEventId ? { ...m, status: 'failed' } : m));
+                    continue;
+                  }
                 }
               }
             } catch (e) {

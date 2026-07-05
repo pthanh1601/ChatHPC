@@ -30,7 +30,7 @@
       }
     },
     "android": {
-      "package": "chatapp.5hpc.app"
+      "package": "chatapp.chathpc.app"
     },
     "plugins": [
       "expo-secure-store",

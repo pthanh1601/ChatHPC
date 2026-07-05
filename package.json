@@ -41,6 +41,7 @@
     "react-native-compressor": "^1.19.2",
     "react-native-fs": "^2.20.0",
     "react-native-get-random-values": "~1.8.0",
+    "native-matrix-crypto": "file:./modules/native-matrix-crypto",
     "react-native-quick-base64": "^2.2.2",
     "react-native-quick-crypto": "^0.7.4",
     "react-native-svg": "14.1.0",

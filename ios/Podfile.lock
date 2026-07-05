@@ -134,6 +134,8 @@ PODS:
   - hermes-engine/Pre-built (0.73.6)
   - JitsiWebRTC (118.0.0)
   - libevent (2.1.12)
+  - NativeMatrixCrypto (1.0.0):
+    - ExpoModulesCore
   - OpenSSL-Universal (3.6.2000)
   - RCT-Folly (2022.05.16.00):
     - boost
@@ -1234,6 +1236,7 @@ DEPENDENCIES:
   - glog (from `../node_modules/react-native/third-party-podspecs/glog.podspec`)
   - hermes-engine (from `../node_modules/react-native/sdks/hermes-engine/hermes-engine.podspec`)
   - libevent (~> 2.1.12)
+  - NativeMatrixCrypto (from `../modules/native-matrix-crypto/ios`)
   - RCT-Folly (from `../node_modules/react-native/third-party-podspecs/RCT-Folly.podspec`)
   - RCT-Folly/Fabric (from `../node_modules/react-native/third-party-podspecs/RCT-Folly.podspec`)
   - RCTRequired (from `../node_modules/react-native/Libraries/RCTRequired`)
@@ -1362,6 +1365,8 @@ EXTERNAL SOURCES:
   hermes-engine:
     :podspec: "../node_modules/react-native/sdks/hermes-engine/hermes-engine.podspec"
     :tag: hermes-2024-02-20-RNv0.73.5-18f99ace4213052c5e7cdbcd39ee9766cd5df7e4
+  NativeMatrixCrypto:
+    :path: "../modules/native-matrix-crypto/ios"
   RCT-Folly:
     :podspec: "../node_modules/react-native/third-party-podspecs/RCT-Folly.podspec"
   RCTRequired:
@@ -1501,6 +1506,7 @@ SPEC CHECKSUMS:
   hermes-engine: 9cecf9953a681df7556b8cc9c74905de8f3293c0
   JitsiWebRTC: 3a41671ef65a51d7204323814b055a2690b921c7
   libevent: 4049cae6c81cdb3654a443be001fb9bdceff7913
+  NativeMatrixCrypto: 003852b27c4560cbaec3f1c9bbbe4b2121d05bce
   OpenSSL-Universal: ecee7b138fa75a74ecf00d7ffd248fb584739b9e
   RCT-Folly: cd21f1661364f975ae76b3308167ad66b09f53f5
   RCTRequired: ca1d7414aba0b27efcfa2ccd37637edb1ab77d96

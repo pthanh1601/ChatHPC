@@ -1,0 +1,6 @@
+{
+  "name": "native-matrix-crypto",
+  "version": "1.0.0",
+  "main": "src/NativeMatrixCryptoModule.ts",
+  "types": "src/NativeMatrixCryptoModule.ts"
+}
