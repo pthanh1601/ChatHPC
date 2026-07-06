@@ -111,7 +111,7 @@ export function Profile({ setScreen }: { setScreen: (s: AppScreen) => void }) {
             </View>
           </View>
           <Text className="text-[24px] font-bold mb-1 text-white tracking-tight text-center">{displayName}</Text>
-          <Text className="text-sm text-gray-400 opacity-80 mb-6">{userId}</Text>
+          <Text className="text-sm text-gray-400 opacity-80 mb-6">{userId.split(':')[0]}</Text>
           
           {/* 
           // Ẩn tạm thời tính năng cập nhật số điện thoại

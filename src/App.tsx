@@ -25,6 +25,7 @@ import { CreateRoom } from './screens/CreateRoom';
 import { InviteMembers } from './screens/InviteMembers';
 import { Invites } from './screens/Invites';
 import { ExploreRooms } from './screens/ExploreRooms';
+import { RoomDetails } from './screens/RoomDetails';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -45,24 +46,44 @@ export default function App() {
   // Dùng ref để PanResponder và BackHandler luôn lấy được state mới nhất
   const currentScreenRef = useRef<AppScreen>(currentScreen);
   const baseScreenRef = useRef<AppScreen>(baseScreen);
-  const slideAnim = useRef(new Animated.Value(width)).current; // Khởi tạo vị trí trượt mặc định ở ngoài rìa phải
+  const slideAnim = useRef(new Animated.Value(width)).current;
+  const slideAnim3 = useRef(new Animated.Value(width)).current;
   const bubblePan = useRef(new Animated.ValueXY()).current; // Lưu toạ độ kéo thả của bong bóng thu nhỏ
 
   const handleSetScreen = (screen: AppScreen) => {
-    const isDetail = ['chat_single', 'chat_group', 'create_room', 'invite_members', 'invites', 'explore_rooms'].includes(screen);
-    const wasDetail = ['chat_single', 'chat_group', 'create_room', 'invite_members', 'invites', 'explore_rooms'].includes(currentScreenRef.current);
+    const isLevel3 = ['room_details', 'invite_members'].includes(screen);
+    const wasLevel3 = ['room_details', 'invite_members'].includes(currentScreenRef.current);
+    const isDetail = ['chat_single', 'chat_group', 'create_room', 'invites', 'explore_rooms'].includes(screen);
+    const wasDetail = ['chat_single', 'chat_group', 'create_room', 'invites', 'explore_rooms'].includes(currentScreenRef.current);
 
-    if (isDetail && !wasDetail) {
-      // Mở trang chi tiết: Bắt đầu animation TRƯỚC, mount component SAU để không bị đơ
+    if (isLevel3 && !wasLevel3) {
       currentScreenRef.current = screen;
       setCurrentScreen(screen);
-      setDelayedDetailScreen(null); // Placeholder nhẹ trước
+      slideAnim3.setValue(width);
+      Animated.spring(slideAnim3, { toValue: 0, useNativeDriver: true, bounciness: 0, speed: 20 }).start();
+    } else if (!isLevel3 && wasLevel3) {
+      Animated.timing(slideAnim3, { toValue: width, duration: 250, useNativeDriver: true }).start(() => {
+        currentScreenRef.current = screen;
+        setCurrentScreen(screen);
+        if (!isDetail && !isLevel3) {
+           if (['chat_list', 'calls', 'profile', 'search', 'contacts'].includes(screen)) {
+             baseScreenRef.current = screen;
+             setBaseScreen(screen);
+           }
+        }
+      });
+      // Nếu nhảy thẳng từ Level3 về Base (ví dụ xoá phòng xong văng ra list)
+      if (!isDetail) {
+         Animated.timing(slideAnim, { toValue: width, duration: 250, useNativeDriver: true }).start();
+      }
+    } else if (isDetail && !wasDetail && !wasLevel3) {
+      currentScreenRef.current = screen;
+      setCurrentScreen(screen);
+      setDelayedDetailScreen(null);
       slideAnim.setValue(width);
       Animated.spring(slideAnim, { toValue: 0, useNativeDriver: true, bounciness: 0, speed: 20 }).start();
-      // Mount component nặng sau 1 frame để animation đã bắt đầu chạy
       requestAnimationFrame(() => setDelayedDetailScreen(screen));
-    } else if (!isDetail && wasDetail) {
-      // Đóng trang chi tiết: Trượt thẳng ra ngoài màn hình trước rồi mới unmount để thấy lớp nền bên dưới
+    } else if (!isDetail && !isLevel3 && (wasDetail || wasLevel3)) {
       Animated.timing(slideAnim, { toValue: width, duration: 250, useNativeDriver: true }).start(() => {
         currentScreenRef.current = screen;
         setCurrentScreen(screen);
@@ -71,44 +92,65 @@ export default function App() {
           setBaseScreen(screen);
         }
       });
+      if (wasLevel3) {
+        Animated.timing(slideAnim3, { toValue: width, duration: 250, useNativeDriver: true }).start();
+      }
     } else {
-      // Chuyển tab ngang hàng ở lớp nền hoặc chuyển giữa các màn hình chi tiết
-      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
       currentScreenRef.current = screen;
       setCurrentScreen(screen);
       if (['chat_list', 'calls', 'profile', 'search', 'contacts'].includes(screen)) {
         baseScreenRef.current = screen;
         setBaseScreen(screen);
       }
-      if (isDetail) {
+      if (isDetail && !isLevel3) {
         setDelayedDetailScreen(screen);
       }
     }
   };
 
+
   const panResponder = useRef(
     PanResponder.create({
       onMoveShouldSetPanResponderCapture: (evt, gestureState) => {
-        const isDetail = ['chat_single', 'chat_group', 'create_room', 'invite_members', 'explore_rooms'].includes(currentScreenRef.current);
+        const isLevel3 = ['room_details', 'invite_members'].includes(currentScreenRef.current);
+        const isDetail = ['chat_single', 'chat_group', 'create_room', 'invites', 'explore_rooms'].includes(currentScreenRef.current);
         const isEdgeSwipe = evt.nativeEvent.pageX < 45;
-        const isSwipingRight = gestureState.dx > 10 && Math.abs(gestureState.dy) < 25; // Chặn nhầm khi đang cuộn dọc
-        return isDetail && isEdgeSwipe && isSwipingRight;
+        const isSwipingRight = gestureState.dx > 10 && Math.abs(gestureState.dy) < 25;
+        return !isLevel3 && isDetail && isEdgeSwipe && isSwipingRight;
       },
       onPanResponderMove: (evt, gestureState) => {
-        // Thay đổi tọa độ X màn hình bám sát theo ngón tay người dùng (Cảm giác native)
-        if (gestureState.dx > 0) {
-          slideAnim.setValue(gestureState.dx);
-        }
+        if (gestureState.dx > 0) slideAnim.setValue(gestureState.dx);
       },
       onPanResponderRelease: (evt, gestureState) => {
         if (gestureState.dx > width * 0.3 || gestureState.vx > 1) {
-          // Vuốt đủ lực hoặc quá 1/3 màn hình -> Đóng luôn
           Animated.timing(slideAnim, { toValue: width, duration: 200, useNativeDriver: true }).start(() => {
             handleSetScreen(baseScreenRef.current);
           });
         } else {
-          // Vuốt chưa tới lực -> Bật lò xo trả lại trạng thái đang mở
           Animated.spring(slideAnim, { toValue: 0, useNativeDriver: true, bounciness: 0 }).start();
+        }
+      }
+    })
+  ).current;
+
+  const panResponder3 = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponderCapture: (evt, gestureState) => {
+        const isLevel3 = ['room_details', 'invite_members'].includes(currentScreenRef.current);
+        const isEdgeSwipe = evt.nativeEvent.pageX < 45;
+        const isSwipingRight = gestureState.dx > 10 && Math.abs(gestureState.dy) < 25;
+        return isLevel3 && isEdgeSwipe && isSwipingRight;
+      },
+      onPanResponderMove: (evt, gestureState) => {
+        if (gestureState.dx > 0) slideAnim3.setValue(gestureState.dx);
+      },
+      onPanResponderRelease: (evt, gestureState) => {
+        if (gestureState.dx > width * 0.3 || gestureState.vx > 1) {
+          Animated.timing(slideAnim3, { toValue: width, duration: 200, useNativeDriver: true }).start(() => {
+            handleSetScreen('chat_single');
+          });
+        } else {
+          Animated.spring(slideAnim3, { toValue: 0, useNativeDriver: true, bounciness: 0 }).start();
         }
       }
     })
@@ -168,11 +210,15 @@ export default function App() {
   useEffect(() => {
     const backAction = () => {
       const screen = currentScreenRef.current;
-      if (['chat_single', 'chat_group', 'create_room', 'invite_members', 'invites', 'explore_rooms'].includes(screen)) {
-        handleSetScreen(baseScreenRef.current);
-        return true; // Chặn hành động đóng app mặc định
+      if (['room_details', 'invite_members'].includes(screen)) {
+        handleSetScreen('chat_single');
+        return true;
       }
-      return false; // Cho phép đóng app nếu đang ở trang chủ (login/chat_list)
+      if (['chat_single', 'chat_group', 'create_room', 'invites', 'explore_rooms'].includes(screen)) {
+        handleSetScreen(baseScreenRef.current);
+        return true;
+      }
+      return false; // Cho phép đóng app nếu đang ở trang chủ
     };
     const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
     return () => backHandler.remove();
@@ -240,7 +286,8 @@ export default function App() {
     );
   }
 
-  const isDetailActive = ['chat_single', 'chat_group', 'create_room', 'invite_members', 'invites', 'explore_rooms'].includes(currentScreen);
+  const isDetailActive = ['chat_single', 'chat_group', 'create_room', 'invites', 'explore_rooms', 'room_details', 'invite_members'].includes(currentScreen);
+  const isLevel3Active = ['room_details', 'invite_members'].includes(currentScreen);
   const activeBaseScreen = isDetailActive ? baseScreen : currentScreen;
 
   return (
@@ -282,7 +329,21 @@ export default function App() {
         </Animated.View>
       )}
 
-      {/* LỚP 3: Màn hình Gọi điện WebRTC */}
+      {/* LỚP 3: Lớp Chi Tiết Sâu (room_details, invite_members) */}
+      {isLevel3Active && (
+        <Animated.View
+          style={{ flex: 1, transform: [{ translateX: slideAnim3 }] }}
+          className="absolute w-full h-full bg-background shadow-2xl shadow-black/50 elevation-24 border-l border-white/5"
+          {...panResponder3.panHandlers}
+        >
+          <SafeScreen>
+            {currentScreen === 'room_details' && <RoomDetails setScreen={handleSetScreen} />}
+            {currentScreen === 'invite_members' && <InviteMembers setScreen={handleSetScreen} />}
+          </SafeScreen>
+        </Animated.View>
+      )}
+
+      {/* LỚP 4: Màn hình Gọi điện WebRTC */}
       {activeCall && !isCallMinimized && (
         <CallScreen activeCall={activeCall} onMinimize={() => setIsCallMinimized(true)} />
       )}

@@ -189,10 +189,21 @@ export function Contacts({ setScreen }: { setScreen: (s: AppScreen) => void }) {
       let existingRoomId = null;
 
       for (const room of rooms) {
-        const joinedMembers = room.getJoinedMembers();
-        if (joinedMembers.length === 2) {
-          const hasTarget = joinedMembers.some((m: any) => m.userId === matrixId);
-          if (hasTarget) {
+        // Bỏ qua các phòng có đặt tên rõ ràng (group)
+        const hasNameEvent = room.currentState.getStateEvents('m.room.name', '');
+        if (hasNameEvent && hasNameEvent.getContent().name) {
+          continue;
+        }
+
+        // Tìm xem user mục tiêu có trong phòng này không (đã join hoặc đang được invite)
+        const targetMember = room.getMember(matrixId);
+        if (targetMember && (targetMember.membership === 'join' || targetMember.membership === 'invite')) {
+          // Đếm số lượng thành viên đang hoạt động (join + invite)
+          const allMembers = room.getMembers();
+          const activeMembers = allMembers.filter((m: any) => m.membership === 'join' || m.membership === 'invite');
+          
+          // Nếu chỉ có 2 người (mình và họ) thì đích thị là chat 1-1
+          if (activeMembers.length <= 2) {
             existingRoomId = room.roomId;
             break;
           }
@@ -272,7 +283,7 @@ export function Contacts({ setScreen }: { setScreen: (s: AppScreen) => void }) {
                 {display}
               </Text>
               <Text className="text-muted text-sm mt-0.5" numberOfLines={1}>
-                {item.user_id}
+                {item.user_id.split(':')[0]}
               </Text>
             </View>
             <TouchableOpacity 

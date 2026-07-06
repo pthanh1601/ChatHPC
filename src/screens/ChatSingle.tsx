@@ -1291,14 +1291,14 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
   return (
     <KeyboardAvoidingView className="flex-1 bg-background relative" behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <Header blurIntensity={100}>
-        <View className="flex-row items-center">
+        <View className="flex-row items-center flex-1 mr-2">
           <TouchableOpacity onPress={() => {
             LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
             setScreen('chat_list');
           }} className="mr-4">
             <ArrowLeft size={24} color="#0DBD8B" />
           </TouchableOpacity>
-          <View className="flex-row items-center">
+          <TouchableOpacity className="flex-row items-center flex-1" onPress={() => setScreen('room_details')}>
             <View className="relative mr-3">
               <View className={`w-10 h-10 rounded-full overflow-hidden items-center justify-center ${roomInfo.avatar ? 'border border-white/10' : ''}`}>
                 {roomInfo.avatar ? (
@@ -1328,12 +1328,9 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
                 <Text className="text-xs font-medium text-secondary/80">{roomInfo.members} thành viên</Text>
               )}
             </View>
-          </View>
+          </TouchableOpacity>
         </View>
         <View className="flex-row items-center">
-          <TouchableOpacity onPress={() => setScreen('invite_members')} className="mr-4">
-            <UserPlus size={24} color="#a0a0a0" />
-          </TouchableOpacity>
           <TouchableOpacity onPress={() => voipService.placeCall(currentActiveRoomId || '', 'voice')} className="mr-4">
             <Phone size={24} color="#a0a0a0" />
           </TouchableOpacity>
