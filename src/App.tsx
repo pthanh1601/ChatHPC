@@ -19,6 +19,7 @@ import { CallScreen } from './screens/CallScreen';
 import { Profile } from './screens/Profile';
 import { Calls } from './screens/Calls';
 import { Search } from './screens/Search';
+import { Contacts } from './screens/Contacts';
 import { SafeScreen } from './components/SafeScreen';
 import { CreateRoom } from './screens/CreateRoom';
 import { InviteMembers } from './screens/InviteMembers';
@@ -65,7 +66,7 @@ export default function App() {
       Animated.timing(slideAnim, { toValue: width, duration: 250, useNativeDriver: true }).start(() => {
         currentScreenRef.current = screen;
         setCurrentScreen(screen);
-        if (['chat_list', 'calls', 'profile', 'search'].includes(screen)) {
+        if (['chat_list', 'calls', 'profile', 'search', 'contacts'].includes(screen)) {
           baseScreenRef.current = screen;
           setBaseScreen(screen);
         }
@@ -75,7 +76,7 @@ export default function App() {
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
       currentScreenRef.current = screen;
       setCurrentScreen(screen);
-      if (['chat_list', 'calls', 'profile', 'search'].includes(screen)) {
+      if (['chat_list', 'calls', 'profile', 'search', 'contacts'].includes(screen)) {
         baseScreenRef.current = screen;
         setBaseScreen(screen);
       }
@@ -252,6 +253,7 @@ export default function App() {
           {activeBaseScreen === 'profile' && <Profile setScreen={handleSetScreen} />}
           {activeBaseScreen === 'calls' && <Calls setScreen={handleSetScreen} />}
           {activeBaseScreen === 'search' && <Search setScreen={handleSetScreen} />}
+          {activeBaseScreen === 'contacts' && <Contacts setScreen={handleSetScreen} />}
 
           {activeBaseScreen !== 'login' && activeBaseScreen !== 'search' && <BottomNav currentScreen={activeBaseScreen} setScreen={handleSetScreen} />}
         </SafeScreen>

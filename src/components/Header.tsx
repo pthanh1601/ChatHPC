@@ -4,6 +4,7 @@ import { BlurView } from 'expo-blur';
 import { Plus, X, MessageSquarePlus, List, User, Hash } from 'lucide-react-native';
 import { AppScreen, USER_AVATAR } from '../data';
 import { setCurrentActiveRoomId } from '../services/MatrixService';
+import theme from '../theme';
 
 interface HeaderProps {
   title?: string;
@@ -48,7 +49,7 @@ export function Header({ title, blurIntensity, setScreen, children, rightCompone
                       className="w-10 h-10 bg-surface/50 rounded-full flex items-center justify-center border border-white/10"
                       onPress={() => setModalVisible(true)}
                     >
-                      <Plus size={22} color="#0DBD8B" />
+                      <Plus size={22} color={theme.colors.primary} />
                     </TouchableOpacity>
                   )}
                 </View>
@@ -75,7 +76,7 @@ export function Header({ title, blurIntensity, setScreen, children, rightCompone
                 className="w-8 h-8 bg-surface rounded-full items-center justify-center border border-white/10"
                 onPress={() => setModalVisible(false)}
               >
-                <X size={20} color="#a0a0a0" />
+                <X size={20} color={theme.colors.muted} />
               </TouchableOpacity>
             </View>
 
@@ -113,7 +114,7 @@ export function Header({ title, blurIntensity, setScreen, children, rightCompone
                 }}
               >
                 <View className="w-12 h-12 bg-primary/20 rounded-full flex items-center justify-center mr-4">
-                  <Hash size={24} color="#0DBD8B" />
+                  <Hash size={24} color={theme.colors.primary} />
                 </View>
                 <View className="flex-1">
                   <Text className="text-base font-semibold text-white">Tạo phòng</Text>

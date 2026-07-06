@@ -8,6 +8,8 @@ PODS:
     - ReactCommon/turbomodule/core
   - EXConstants (15.4.6):
     - ExpoModulesCore
+  - EXContacts (12.8.2):
+    - ExpoModulesCore
   - EXFont (11.10.3):
     - ExpoModulesCore
   - EXImageLoader (4.6.0):
@@ -1208,6 +1210,7 @@ DEPENDENCIES:
   - EXApplication (from `../node_modules/expo-application/ios`)
   - EXAV (from `../node_modules/expo-av/ios`)
   - EXConstants (from `../node_modules/expo-constants/ios`)
+  - EXContacts (from `../node_modules/expo-contacts/ios`)
   - EXFont (from `../node_modules/expo-font/ios`)
   - EXImageLoader (from `../node_modules/expo-image-loader/ios`)
   - EXJSONUtils (from `../node_modules/expo-json-utils/ios`)
@@ -1310,6 +1313,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/expo-av/ios"
   EXConstants:
     :path: "../node_modules/expo-constants/ios"
+  EXContacts:
+    :path: "../node_modules/expo-contacts/ios"
   EXFont:
     :path: "../node_modules/expo-font/ios"
   EXImageLoader:
@@ -1476,6 +1481,7 @@ SPEC CHECKSUMS:
   EXApplication: d62cd534090692cbf538ea15f69f829b517a40b1
   EXAV: e160fec51bf6bc41c3b6f7e4c72ea9fd36860cd6
   EXConstants: c82ef9280044accc91fb6082047afdc9a408f61a
+  EXContacts: 64cef1f6e7e92d2ed1a3d00b16f4f5ff61614eee
   EXFont: 64e653a110eee050ad80dfcd676c4bada0a1ff92
   EXImageLoader: ba2506b443b9656e93167c104406a2c265924823
   EXJSONUtils: 5c42959e87be238b045ef37cc5268b16a6c0ad4a

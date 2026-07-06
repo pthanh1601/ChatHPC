@@ -79,8 +79,14 @@ export const getSystemMessageText = (event: any, room: any): string | null => {
         return `${targetName} đã tham gia phòng`;
       } else {
         if (content.displayname !== prevContent?.displayname) {
-          const oldName = prevContent?.displayname || targetId;
-          const newName = content.displayname || targetId;
+          const oldRaw = prevContent?.displayname || targetId;
+          const newRaw = content.displayname || targetId;
+          const oldName = oldRaw.replace(/(\s*\[.*?\])+\s*$/, '');
+          const newName = newRaw.replace(/(\s*\[.*?\])+\s*$/, '');
+          
+          if (oldName === newName) {
+            return null; // Bỏ qua nếu chỉ đổi số điện thoại ẩn
+          }
           return `${oldName} đã đổi tên thành ${newName}`;
         }
         if (content.avatar_url !== prevContent?.avatar_url) {

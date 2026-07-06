@@ -1,4 +1,4 @@
-export type AppScreen = 'login' | 'chat_list' | 'chat_single' | 'chat_group' | 'profile' | 'calls' | 'search' | 'create_room' | 'invite_members' | 'invites' | 'explore_rooms';
+export type AppScreen = 'login' | 'chat_list' | 'chat_single' | 'chat_group' | 'profile' | 'calls' | 'search' | 'create_room' | 'invite_members' | 'invites' | 'explore_rooms' | 'contacts';
 
 export const USER_AVATAR = "https://lh3.googleusercontent.com/aida-public/AB6AXuBddU0Hr7yzdQy6NGakq8hGey2NCUVPOg0auBr25eUlMscp8YJwpH2NRU6rivGo0FzjkpOWJyAh9XtVC02uprXMLtYg3UFfYhm5uTCpK9S_T-z43LosSgvnpD4qaP7OACeV6g5vSpcGGdyKTc6JULQ6tYsZKtdI20yXjLwxKnL-JkW8d4pjNNo06jmeQ8Wkd7p1_aw-RbsNZYx9YoXq-Y9JuGVoknIKECCeUeGMVJWHGOEUWy4PypvAlIXqQibKVW2imp7WRXroq3M";
 export const HERO_AVATAR = "https://lh3.googleusercontent.com/aida-public/AB6AXuDVGnWNeUX1C7j0UQUVQOtKih5hdpK1YapFNjsZA4OopthEeW0UEmuarjFPa9In6RVtJ2zZ-UC2Ll7xdYJQo9EXmCAKaNfprzIbi3XTtInQi_nTdYB8V11OeS6YREAXxVGgzkBemveRu31S53XDZ1mzOpEuEek1cAp1bwJziK97a5Vdi59TOpxC1bTB1rHmhP6RXZUuxXUw7KVh05pFsRzOLllB_3akPI-59kOWf6C6pE8E9hrbwtDbNcRdfQG-o3G8Y-sN9Alc4Q0";

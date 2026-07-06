@@ -129,30 +129,44 @@ export const getInitialChats = () => {
     const lastEvent = timeline.length > 0 ? timeline[timeline.length - 1] : null;
     const isInvite = room.getMyMembership() === 'invite' && !joinedRoomsLocal.has(room.roomId);
 
+    let lastValidEvent = null;
     let lastMessage = 'Chưa có tin nhắn';
     let time = '';
 
-    if (lastEvent) {
-      const type = lastEvent.getType();
+    // Lọc sự kiện hợp lệ cuối cùng để không bị nhảy thời gian khi cập nhật sđt
+    for (let i = timeline.length - 1; i >= 0; i--) {
+      const evt = timeline[i];
+      const type = evt.getType();
+      if (['m.room.member', 'm.room.name', 'm.room.avatar', 'm.room.topic', 'm.room.create'].includes(type)) {
+        const sysText = getSystemMessageText(evt, room);
+        if (sysText) {
+          lastValidEvent = evt;
+          lastMessage = sysText;
+          break;
+        }
+      } else {
+        lastValidEvent = evt;
+        break;
+      }
+    }
+
+    if (lastValidEvent) {
+      const type = lastValidEvent.getType();
       if (type === 'm.room.message') {
-        lastMessage = lastEvent.getContent().body || 'Tin nhắn';
+        lastMessage = lastValidEvent.getContent().body || 'Tin nhắn';
       } else if (type === 'm.call.invite') {
-        const isVideo = lastEvent.getContent()?.offer?.sdp?.includes('m=video');
+        const isVideo = lastValidEvent.getContent()?.offer?.sdp?.includes('m=video');
         lastMessage = isVideo ? '📹 Cuộc gọi Video' : '📞 Cuộc gọi Thoại';
       } else if (type === 'm.call.hangup') {
         lastMessage = '📞 Cuộc gọi kết thúc';
-      } else if (lastEvent.isEncrypted && lastEvent.isEncrypted()) {
-        const clear = lastEvent.getClearContent();
+      } else if (lastValidEvent.isEncrypted && lastValidEvent.isEncrypted()) {
+        const clear = lastValidEvent.getClearContent();
         lastMessage = clear?.body || '🔒 Tin nhắn mã hóa';
-      } else {
-        const sysText = getSystemMessageText(lastEvent, room);
-        if (sysText) {
-          lastMessage = sysText;
-        } else {
-          lastMessage = 'Có sự kiện mới';
-        }
+      } else if (!['m.room.member', 'm.room.name', 'm.room.avatar', 'm.room.topic', 'm.room.create'].includes(type)) {
+        lastMessage = 'Có sự kiện mới';
       }
-      const date = new Date(lastEvent.getTs());
+
+      const date = new Date(lastValidEvent.getTs());
       const hours = date.getHours().toString().padStart(2, '0');
       const mins = date.getMinutes().toString().padStart(2, '0');
       time = `${hours}:${mins}`;
@@ -177,10 +191,10 @@ export const getInitialChats = () => {
       avatar,
       accessToken: client.getAccessToken(),
       lastMessage,
-      lastEventId: lastEvent ? lastEvent.getId() : null,
+      lastEventId: lastValidEvent ? lastValidEvent.getId() : null,
       time,
       unread: isInvite ? 1 : unreadCount,
-      timestamp: lastEvent ? lastEvent.getTs() : (isInvite ? Date.now() : 0),
+      timestamp: lastValidEvent ? lastValidEvent.getTs() : (isInvite ? Date.now() : 0),
       isInvite
     };
   });
@@ -196,6 +210,16 @@ export function ChatList({ setScreen }: { setScreen: (s: AppScreen) => void }) {
 
   // Khởi tạo state ngay từ đầu để tránh màn hình bị nháy trống trơn lúc mới load
   const [chats, setChats] = useState<any[]>(() => {
+    const client = getMatrixClient();
+    const syncState = client?.getSyncState();
+    
+    // Nếu client ĐÃ HOÀN TẤT ĐỒNG BỘ (chuyển trang qua lại), lấy dữ liệu thật ngay lập tức để tránh nháy (jump)
+    if (client && (syncState === 'PREPARED' || syncState === 'SYNCING')) {
+      const initial = getInitialChats();
+      if (initial.length > 0) return initial;
+    }
+
+    // Nếu mới mở app (chưa đồng bộ xong), lấy từ ổ cứng để hiển thị ngay
     const cached = persistentLocalStorage.getItem('cached_chat_list');
     if (cached) {
       try {

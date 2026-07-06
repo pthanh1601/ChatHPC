@@ -4,6 +4,7 @@ import { Search as SearchIcon, X } from 'lucide-react-native';
 import { AppScreen } from '../data';
 import { getMatrixClient } from '../services/MatrixService';
 import { getInitialChats, MemoizedChatItem } from './ChatList';
+import theme from '../theme';
 
 const SEARCH_TABS = ['Chats', 'Channels', 'Apps', 'Posts', 'Media', 'Links'];
 
@@ -84,7 +85,7 @@ export function Search({ setScreen }: { setScreen: (s: AppScreen) => void }) {
               />
             )}
             ListEmptyComponent={() => (
-              <Text className="text-[#8e8e93] text-center mt-8 text-base">No results found</Text>
+              <Text className="text-muted text-center mt-8 text-base">No results found</Text>
             )}
           />
         ) : (
@@ -102,7 +103,7 @@ export function Search({ setScreen }: { setScreen: (s: AppScreen) => void }) {
                 onPress={() => setActiveTab(tab)}
                 className={`px-4 py-1.5 rounded-full mr-1 ${activeTab === tab ? 'bg-surface' : ''}`}
               >
-                <Text className={`text-[15px] font-medium ${activeTab === tab ? 'text-white' : 'text-[#8e8e93]'}`}>
+                <Text className={`text-[15px] font-medium ${activeTab === tab ? 'text-white' : 'text-muted'}`}>
                   {tab}
                 </Text>
               </TouchableOpacity>
@@ -113,10 +114,10 @@ export function Search({ setScreen }: { setScreen: (s: AppScreen) => void }) {
         {/* Search Input Row */}
         <View className="flex-row items-center">
           <View className="flex-1 bg-surface rounded-full flex-row items-center px-4 h-11">
-            <SearchIcon size={20} color="#8e8e93" />
+            <SearchIcon size={20} color={theme.colors.muted} />
             <TextInput 
               placeholder="Search" 
-              placeholderTextColor="#8e8e93"
+              placeholderTextColor={theme.colors.muted}
               value={searchQuery}
               onChangeText={setSearchQuery}
               className="flex-1 text-white text-[17px] ml-2 h-full"
@@ -134,7 +135,7 @@ export function Search({ setScreen }: { setScreen: (s: AppScreen) => void }) {
             }} 
             className="w-11 h-11 bg-surface rounded-full ml-3 items-center justify-center"
           >
-            <X size={22} color="#8e8e93" />
+            <X size={22} color={theme.colors.muted} />
           </TouchableOpacity>
         </View>
       </View>
