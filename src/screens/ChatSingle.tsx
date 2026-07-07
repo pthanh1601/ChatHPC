@@ -1331,9 +1331,11 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
           </TouchableOpacity>
         </View>
         <View className="flex-row items-center">
-          <TouchableOpacity onPress={() => voipService.placeCall(currentActiveRoomId || '', 'voice')} className="mr-4">
-            <Phone size={24} color="#a0a0a0" />
-          </TouchableOpacity>
+          {roomInfo.members <= 2 && (
+            <TouchableOpacity onPress={() => voipService.placeCall(currentActiveRoomId || '', 'voice')} className="mr-4">
+              <Phone size={24} color="#a0a0a0" />
+            </TouchableOpacity>
+          )}
           <TouchableOpacity onPress={() => voipService.placeCall(currentActiveRoomId || '', 'video')}>
             <Video size={24} color="#a0a0a0" />
           </TouchableOpacity>

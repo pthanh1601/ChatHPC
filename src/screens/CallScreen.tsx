@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TouchableOpacity, SafeAreaView, Dimensions, Image, Modal, Animated } from 'react-native';
+import { View, Text, TouchableOpacity, SafeAreaView, Dimensions, Image, Modal, Animated, Alert } from 'react-native';
 import { RTCView } from 'react-native-webrtc';
-import { Mic, MicOff, Video, VideoOff, PhoneOff, Phone, Minimize2, Volume2, VolumeX } from 'lucide-react-native';
+import { Mic, MicOff, Video, VideoOff, PhoneOff, Phone, Minimize2, Volume2 } from 'lucide-react-native';
 import { BlurView } from 'expo-blur';
 import { Audio } from 'expo-av';
+import InCallManager from 'react-native-incall-manager';
 import { getMatrixClient } from '../services/MatrixService';
 import { voipService } from '../services/VoipService';
 import { CONTACTS } from '../data';
@@ -15,6 +16,7 @@ export function CallScreen({ activeCall, onMinimize }: { activeCall: any, onMini
     const [remoteStream, setRemoteStream] = useState<any>(null);
     const [isMuted, setIsMuted] = useState(false);
     const [isVideoMuted, setIsVideoMuted] = useState(false);
+    const [isVideoRequested, setIsVideoRequested] = useState(false);
     const [isSpeakerOn, setIsSpeakerOn] = useState(activeCall?.type === 'video');
     const [duration, setDuration] = useState(0);
     const [roomInfo, setRoomInfo] = useState({ name: 'Đang kết nối...', avatar: CONTACTS.aria.avatar });
@@ -26,13 +28,9 @@ export function CallScreen({ activeCall, onMinimize }: { activeCall: any, onMini
         const newState = !isSpeakerOn;
         setIsSpeakerOn(newState);
         try {
-            await Audio.setAudioModeAsync({
-                allowsRecordingIOS: true,
-                playsInSilentModeIOS: true,
-                playThroughEarpieceAndroid: !newState,
-            });
+            InCallManager.setForceSpeakerphoneOn(newState);
         } catch (e) {
-            console.error("Lỗi chuyển loa:", e);
+            console.error("Lỗi chuyển loa InCallManager:", e);
         }
     };
 
@@ -59,12 +57,32 @@ export function CallScreen({ activeCall, onMinimize }: { activeCall: any, onMini
         const onLocalStream = (stream: any) => setLocalStream(stream);
         const onRemoteStream = (stream: any) => setRemoteStream(stream);
 
+        const onUpgradeRequested = (content: any) => {
+            Alert.alert(
+                "Yêu cầu bật Video",
+                "Đối phương muốn chuyển sang cuộc gọi video",
+                [
+                    { text: "Từ chối", onPress: () => voipService.rejectVideoUpgrade(), style: "cancel" },
+                    { text: "Đồng ý", onPress: () => voipService.acceptVideoUpgrade() }
+                ]
+            );
+        };
+
+        const onUpgradeRejected = () => {
+            Alert.alert("Bị từ chối", "Đối phương đã từ chối yêu cầu video của bạn.");
+            setIsVideoRequested(false);
+        };
+
         voipService.on('call.local_stream', onLocalStream);
         voipService.on('call.remote_stream', onRemoteStream);
+        voipService.on('call.video_upgrade_requested', onUpgradeRequested);
+        voipService.on('call.video_upgrade_rejected', onUpgradeRejected);
 
         return () => {
             voipService.removeListener('call.local_stream', onLocalStream);
             voipService.removeListener('call.remote_stream', onRemoteStream);
+            voipService.removeListener('call.video_upgrade_requested', onUpgradeRequested);
+            voipService.removeListener('call.video_upgrade_rejected', onUpgradeRejected);
         };
     }, [activeCall]);
 
@@ -94,8 +112,12 @@ export function CallScreen({ activeCall, onMinimize }: { activeCall: any, onMini
                     allowsRecordingIOS: true,
                     playsInSilentModeIOS: true,
                     staysActiveInBackground: true,
-                    playThroughEarpieceAndroid: false,
                 });
+
+                if (activeCall?.state === 'connected') {
+                    InCallManager.start({ media: activeCall.type === 'video' ? 'video' : 'audio' });
+                    InCallManager.setForceSpeakerphoneOn(activeCall.type === 'video');
+                }
 
                 if (activeCall?.isIncoming && activeCall?.state === 'ringing') {
                     // Đổ chuông báo người khác gọi đến
@@ -118,8 +140,16 @@ export function CallScreen({ activeCall, onMinimize }: { activeCall: any, onMini
         };
 
         handleAudio();
-        return () => { if (soundRef.current) { soundRef.current.stopAsync().catch(()=>{}); soundRef.current.unloadAsync().catch(()=>{}); } };
-    }, [activeCall?.state, activeCall?.isIncoming]);
+        return () => { 
+            if (soundRef.current) { 
+                soundRef.current.stopAsync().catch(()=>{}); 
+                soundRef.current.unloadAsync().catch(()=>{}); 
+            }
+            if (activeCall?.state === 'ended' || !activeCall) {
+                InCallManager.stop();
+            }
+        };
+    }, [activeCall?.state, activeCall?.isIncoming, activeCall?.type]);
 
     useEffect(() => {
         let interval: NodeJS.Timeout;
@@ -157,6 +187,7 @@ export function CallScreen({ activeCall, onMinimize }: { activeCall: any, onMini
     };
 
     const hangup = () => {
+        InCallManager.stop();
         voipService.hangupCall();
     };
 
@@ -187,7 +218,7 @@ export function CallScreen({ activeCall, onMinimize }: { activeCall: any, onMini
 
     return (
         <Modal visible={true} animationType="slide" transparent={false} onRequestClose={onMinimize}>
-            <View className="flex-1 bg-[#15191E] z-[1000]">
+            <View className="flex-1 bg-black z-[1000]">
                 {/* Background Layer */}
                 {remoteStream && isVideoMode ? (
                     <View className="absolute w-full h-full bg-black">
@@ -198,31 +229,19 @@ export function CallScreen({ activeCall, onMinimize }: { activeCall: any, onMini
                         />
                     </View>
                 ) : (
-                    <View className="absolute w-full h-full bg-[#15191E] overflow-hidden items-center justify-center">
-                        <View className="absolute top-0 -left-20 w-96 h-96 bg-[#0DBD8B]/10 rounded-full blur-[100px]" />
-                        <View className="absolute bottom-0 -right-20 w-96 h-96 bg-[#03B381]/10 rounded-full blur-[100px]" />
-                        
+                    <View className="absolute w-full h-full bg-black overflow-hidden items-center justify-center">
                         {/* Voice Call Avatar Center */}
-                        <View className="items-center justify-center mb-10 z-10">
-                            <View className="relative items-center justify-center mb-8">
-                                <Animated.View 
-                                    className={`absolute w-44 h-44 rounded-full border border-primary/20 bg-primary/5 ${activeCall.state === 'connected' ? 'opacity-100' : 'opacity-0'}`} 
-                                    style={{ transform: [{ scale: scaleAnim }] }}
-                                />
-                                <View className="w-36 h-36 rounded-full border-2 border-primary/30 p-1 bg-surface z-10 shadow-2xl shadow-primary/20">
-                                    <View className="w-full h-full rounded-full border-4 border-background overflow-hidden">
-                                        <Image source={{ uri: roomInfo.avatar }} className="w-full h-full" />
-                                    </View>
+                        <View className="items-center justify-center mb-20 z-10">
+                            <View className="relative items-center justify-center mb-6">
+                                <View className="w-40 h-40 rounded-full overflow-hidden bg-[#2c2c2e] z-10">
+                                    <Image source={{ uri: roomInfo.avatar }} className="w-full h-full" />
                                 </View>
                             </View>
 
-                            <Text className="text-white text-3xl font-extrabold mb-2 tracking-wide text-center px-4">
+                            <Text className="text-white text-3xl font-bold mb-2 text-center px-4">
                                 {roomInfo.name}
                             </Text>
-                            <Text className="text-primary font-bold text-xs uppercase tracking-widest mb-2">
-                                {activeCall.isIncoming ? 'Cuộc gọi đến' : (isVideoMode ? 'Cuộc gọi Video' : 'Cuộc gọi Thoại')}
-                            </Text>
-                            <Text className="text-gray-400 text-base font-medium">
+                            <Text className="text-[#8e8e93] text-lg font-normal">
                                 {renderCallStatus()}
                             </Text>
                         </View>
@@ -231,7 +250,7 @@ export function CallScreen({ activeCall, onMinimize }: { activeCall: any, onMini
                 
                 {/* Local Video PiP Layer */}
                 {localStream && isVideoMode && !isVideoMuted && (
-                    <View className="absolute top-28 right-5 w-28 h-40 rounded-2xl overflow-hidden bg-[#22262E] border-2 border-white/20 shadow-2xl z-50">
+                    <View className="absolute bottom-40 right-6 w-28 h-40 rounded-xl overflow-hidden bg-[#2c2c2e] z-50 shadow-lg">
                         <RTCView
                             streamURL={localStream.toURL()}
                             style={{ width: '100%', height: '100%' }}
@@ -243,14 +262,14 @@ export function CallScreen({ activeCall, onMinimize }: { activeCall: any, onMini
 
                 {/* Top Header Controls */}
                 <SafeAreaView className="absolute top-0 left-0 w-full z-50">
-                    <View className="px-5 py-4 flex-row justify-between items-center mt-2">
-                        <TouchableOpacity onPress={onMinimize} className="w-12 h-12 bg-black/40 rounded-full flex items-center justify-center border border-white/10 backdrop-blur-md">
-                            <Minimize2 size={24} color="#0DBD8B" />
+                    <View className="px-4 py-2 flex-row justify-between items-center mt-2">
+                        <TouchableOpacity onPress={onMinimize} className="w-12 h-12 flex items-center justify-center">
+                            <Minimize2 size={28} color="white" />
                         </TouchableOpacity>
                         {remoteStream && isVideoMode && (
-                            <View className="bg-black/50 px-5 py-2 rounded-full border border-white/10 flex-col items-center backdrop-blur-md shadow-lg shadow-black/50">
-                                <Text className="text-white font-bold text-sm mb-0.5">{roomInfo.name}</Text>
-                                <Text className="text-primary text-[10px] font-medium">{renderCallStatus()}</Text>
+                            <View className="bg-black/60 px-4 py-1.5 rounded-full flex-col items-center">
+                                <Text className="text-white font-semibold text-sm">{roomInfo.name}</Text>
+                                <Text className="text-[#8e8e93] text-[11px] font-medium">{renderCallStatus()}</Text>
                             </View>
                         )}
                         <View className="w-12 h-12" />
@@ -258,39 +277,37 @@ export function CallScreen({ activeCall, onMinimize }: { activeCall: any, onMini
                 </SafeAreaView>
 
                 {/* Bottom Controls */}
-                <View className="absolute bottom-10 left-6 right-6 z-50">
-                    <BlurView intensity={60} tint="dark" className="rounded-[36px] border border-white/10 overflow-hidden px-6 py-5 flex-row justify-between items-center bg-black/30 shadow-2xl">
-                        {activeCall.isIncoming && activeCall.state === 'ringing' ? (
-                            <View className="w-full flex-row justify-around items-center px-4">
-                                <TouchableOpacity onPress={hangup} className="w-16 h-16 rounded-full flex items-center justify-center bg-[#ff4a4a] shadow-lg shadow-[#ff4a4a]/40">
-                                    <PhoneOff size={28} color="white" />
-                                </TouchableOpacity>
-                                <TouchableOpacity onPress={() => voipService.answerCall()} className="w-16 h-16 rounded-full flex items-center justify-center bg-[#03B381] shadow-lg shadow-[#03B381]/40">
-                                    <Phone size={28} color="#15191E" fill="#15191E" />
-                                </TouchableOpacity>
-                            </View>
-                        ) : (
-                            <View className="w-full flex-row justify-around items-center">
-                                <TouchableOpacity onPress={toggleMute} className={`w-14 h-14 rounded-full flex items-center justify-center transition-all ${isMuted ? 'bg-white shadow-lg shadow-white/30' : 'bg-black/40 border border-white/10'}`}>
-                                    {isMuted ? <MicOff size={24} color="#22262E" /> : <Mic size={24} color="#0DBD8B" />}
-                                </TouchableOpacity>
+                <View className="absolute bottom-12 left-0 right-0 w-full z-50">
+                    {activeCall.isIncoming && activeCall.state === 'ringing' ? (
+                        <View className="w-full flex-row justify-center items-center gap-16 px-6">
+                            <TouchableOpacity onPress={hangup} className="w-16 h-16 rounded-full flex items-center justify-center bg-[#ff3b30]">
+                                <PhoneOff size={28} color="white" />
+                            </TouchableOpacity>
+                            <TouchableOpacity onPress={() => voipService.answerCall()} className="w-16 h-16 rounded-full flex items-center justify-center bg-[#34c759]">
+                                <Phone size={28} color="white" fill="white" />
+                            </TouchableOpacity>
+                        </View>
+                    ) : (
+                        <View className="w-full flex-row justify-evenly items-center px-4">
+                            <TouchableOpacity onPress={toggleMute} className={`w-16 h-16 rounded-full flex items-center justify-center ${isMuted ? 'bg-white' : 'bg-[#2c2c2e]'}`}>
+                                {isMuted ? <MicOff size={28} color="black" /> : <Mic size={28} color="white" />}
+                            </TouchableOpacity>
 
-                                <TouchableOpacity onPress={toggleSpeaker} className={`w-14 h-14 rounded-full flex items-center justify-center transition-all ${isSpeakerOn ? 'bg-white shadow-lg shadow-white/30' : 'bg-black/40 border border-white/10'}`}>
-                                    {isSpeakerOn ? <Volume2 size={24} color="#22262E" /> : <VolumeX size={24} color="#0DBD8B" />}
-                                </TouchableOpacity>
+                            <TouchableOpacity onPress={toggleSpeaker} className={`w-16 h-16 rounded-full flex items-center justify-center ${isSpeakerOn ? 'bg-white' : 'bg-[#2c2c2e]'}`}>
+                                <Volume2 size={28} color={isSpeakerOn ? "black" : "white"} />
+                            </TouchableOpacity>
 
-                                {isVideoMode && (
-                                    <TouchableOpacity onPress={toggleVideo} className={`w-14 h-14 rounded-full flex items-center justify-center transition-all ${isVideoMuted ? 'bg-white shadow-lg shadow-white/30' : 'bg-black/40 border border-white/10'}`}>
-                                        {isVideoMuted ? <VideoOff size={24} color="#22262E" /> : <Video size={24} color="#03B381" />}
-                                    </TouchableOpacity>
-                                )}
-
-                                <TouchableOpacity onPress={hangup} className="w-16 h-14 rounded-full flex items-center justify-center bg-[#ff4a4a] shadow-lg shadow-[#ff4a4a]/30">
-                                    <PhoneOff size={24} color="white" />
+                            {isVideoMode && (
+                                <TouchableOpacity onPress={toggleVideo} className={`w-16 h-16 rounded-full flex items-center justify-center ${isVideoMuted ? 'bg-white' : 'bg-[#2c2c2e]'}`}>
+                                    {isVideoMuted ? <VideoOff size={28} color="black" /> : <Video size={28} color="white" />}
                                 </TouchableOpacity>
-                            </View>
-                        )}
-                    </BlurView>
+                            )}
+
+                            <TouchableOpacity onPress={hangup} className="w-16 h-16 rounded-full flex items-center justify-center bg-[#ff3b30]">
+                                <PhoneOff size={28} color="white" />
+                            </TouchableOpacity>
+                        </View>
+                    )}
                 </View>
             </View>
         </Modal>

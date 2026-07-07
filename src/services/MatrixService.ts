@@ -464,7 +464,10 @@ class MatrixService extends EventEmitter {
                 // Gọi hàm kích hoạt đăng ký liên tục đến khi nào Homeserver nhận thì thôi
                 registerMatrixPusher(this.client);
 
-                // TODO: voipService.init(); nếu có
+                // Initialize VoipService and listen to custom to-device signaling for call upgrades
+                if (typeof voipService.init === 'function') {
+                    voipService.init(this.client);
+                }
 
                 if (this.client.getCrypto()) {
                     this.client.on("crypto.verification.request" as any, (request: any) => {
