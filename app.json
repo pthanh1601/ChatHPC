@@ -41,6 +41,15 @@
           "cameraPermission": "Cho phép ứng dụng sử dụng Camera để gọi Video.",
           "microphonePermission": "Cho phép ứng dụng sử dụng Micro để gọi điện thoại."
         }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "deploymentTarget": "15.1",
+            "useFrameworks": "static"
+          }
+        }
       ]
     ]
   }

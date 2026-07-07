@@ -3,6 +3,18 @@ const { getDefaultConfig } = require('expo/metro-config');
 
 const config = getDefaultConfig(__dirname);
 
+// Cấu hình react-native-svg-transformer
+const { transformer, resolver } = config;
+config.transformer = {
+  ...transformer,
+  babelTransformerPath: require.resolve("react-native-svg-transformer/expo")
+};
+config.resolver = {
+  ...resolver,
+  assetExts: resolver.assetExts.filter((ext) => ext !== "svg"),
+  sourceExts: [...resolver.sourceExts, "svg"]
+};
+
 // 1. MOCK HOÀN TOÀN CÁC THƯ VIỆN NODE.JS ĐỂ CHẶN ĐỨNG LỖI BIÊN DỊCH
 config.resolver.extraNodeModules = {
   ...config.resolver.extraNodeModules,

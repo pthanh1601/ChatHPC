@@ -56,7 +56,10 @@ class VoipService extends EventEmitter {
     }
 
     answerCall() {
-        if (this.activeCall && this.activeCall.state === 'ringing') this.activeCall.answer();
+        if (this.activeCall && this.activeCall.state === 'ringing') {
+            const isVideo = this.activeCall.type === 'video' || this.activeCall.hasRemoteUserMediaVideoTrack;
+            this.activeCall.answer(true, isVideo);
+        }
     }
 
     hangupCall() {

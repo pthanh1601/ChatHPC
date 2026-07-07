@@ -22,6 +22,7 @@ import * as Sharing from 'expo-sharing';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as VideoThumbnails from 'expo-video-thumbnails';
 import { Video as CompressorVideo } from 'react-native-compressor';
+import { JitsiCallModal } from '../components/JitsiCallModal';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -349,6 +350,41 @@ const SystemMessageGroup = ({ msg }: { msg: any }) => {
 
 export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void }) {
   const [inputText, setInputText] = useState('');
+  const [showJitsiModal, setShowJitsiModal] = useState(false);
+  const [activeJitsiWidget, setActiveJitsiWidget] = useState<any>(null);
+
+  useEffect(() => {
+    const client = getMatrixClient();
+    if (!client || !currentActiveRoomId) return;
+
+    const updateWidget = () => {
+      const room = client.getRoom(currentActiveRoomId);
+      if (!room) return;
+      const events = room.currentState.getStateEvents("im.vector.modular.widgets");
+      const jitsiEvents = events.filter((e: any) => {
+        const type = e.getContent()?.type;
+        return type === 'jitsi' || type === 'm.jitsi';
+      });
+      const active = jitsiEvents.find((e: any) => {
+        const content = e.getContent();
+        return content && content.type && Object.keys(content).length > 0;
+      });
+      setActiveJitsiWidget(active || null);
+    };
+
+    updateWidget();
+
+    const onStateEvent = (event: any) => {
+      if (event.getType() === "im.vector.modular.widgets") {
+        updateWidget();
+      }
+    };
+
+    client.on("RoomState.events", onStateEvent);
+    return () => {
+      client.removeListener("RoomState.events", onStateEvent);
+    };
+  }, [currentActiveRoomId]);
 
   const getRoomMessages = () => {
     const client = getMatrixClient();
@@ -1336,11 +1372,89 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
               <Phone size={24} color="#a0a0a0" />
             </TouchableOpacity>
           )}
-          <TouchableOpacity onPress={() => voipService.placeCall(currentActiveRoomId || '', 'video')}>
+          <TouchableOpacity onPress={async () => {
+            if (roomInfo.members > 2) {
+              const client = getMatrixClient();
+              if (client && currentActiveRoomId) {
+                const widgetId = "jitsi_" + client.getUserId() + "_" + Date.now();
+                const jitsiDomain = "jitsi.5hpc.com";
+                const confId = currentActiveRoomId.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+                const content = {
+                  creatorUserId: client.getUserId(),
+                  data: { isAudioOnly: false },
+                  id: widgetId,
+                  name: "Jitsi",
+                  type: "jitsi",
+                  url: `https://${jitsiDomain}/${confId}`
+                };
+                try {
+                  await client.sendStateEvent(currentActiveRoomId, "im.vector.modular.widgets", content, widgetId);
+                  await client.sendEvent(currentActiveRoomId, "m.room.message", {
+                    msgtype: "m.text",
+                    body: "Đã bắt đầu cuộc gọi video Jitsi. Nhấn Tham Gia ở trên để vào.",
+                  });
+                  setShowJitsiModal(true);
+                } catch (e: any) {
+                  console.error("Failed to start Jitsi widget", e);
+                  if (e.errcode === 'M_FORBIDDEN' || e.message?.includes('403') || e.message?.includes('FORBIDDEN')) {
+                    try {
+                      await client.sendEvent(currentActiveRoomId, "m.room.message", {
+                        msgtype: "m.text",
+                        body: `Tôi đã mở phòng họp Video. Nếu bạn không thấy nút Tham gia, hãy copy link này dán vào trình duyệt: ${content.url}`,
+                      });
+                      setShowJitsiModal(true);
+                    } catch (err) {
+                      console.error("Failed to send fallback message", err);
+                      Alert.alert("Lỗi", "Bạn không có quyền tạo cuộc gọi trong phòng này.");
+                    }
+                  } else {
+                    Alert.alert("Lỗi", "Không thể bắt đầu cuộc gọi video: " + (e.message || "Lỗi không xác định"));
+                  }
+                }
+              }
+            } else {
+              voipService.placeCall(currentActiveRoomId || '', 'video');
+            }
+          }}>
             <Video size={24} color="#a0a0a0" />
           </TouchableOpacity>
         </View>
       </Header>
+
+      {activeJitsiWidget && !showJitsiModal && (
+        <View className="px-4 py-3 bg-[#1e1e1e] border-b border-white/5 flex-row items-center justify-between z-10 shadow-lg">
+          <View className="flex-row items-center flex-1">
+            <View className="w-10 h-10 rounded-full bg-[#34c759]/20 items-center justify-center mr-3">
+              <Video size={20} color="#34c759" />
+            </View>
+            <View className="flex-1">
+              <Text className="text-white font-semibold text-[15px]">Cuộc gọi đang diễn ra</Text>
+              <Text className="text-gray-400 text-xs mt-0.5">Tham gia cùng mọi người</Text>
+            </View>
+          </View>
+          <View className="flex-row items-center gap-2">
+            <TouchableOpacity 
+              onPress={() => setShowJitsiModal(true)}
+              className="bg-[#34c759] py-2 px-5 rounded-full"
+            >
+              <Text className="text-white font-semibold">Tham gia</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              onPress={async () => {
+                const client = getMatrixClient();
+                if (client && currentActiveRoomId && activeJitsiWidget) {
+                  try {
+                    await client.sendStateEvent(currentActiveRoomId, "im.vector.modular.widgets", {}, activeJitsiWidget.getStateKey());
+                  } catch (e) { console.error("End call failed", e); }
+                }
+              }}
+              className="bg-red-500/20 py-2 px-3 rounded-full"
+            >
+              <Text className="text-red-500 font-semibold text-xs">Kết thúc</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
 
       {!isUiReady ? (
         <View className="flex-1 items-center justify-center">
@@ -1593,6 +1707,12 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
       </View>
         );
       })()}
+      {/* Jitsi Group Call Modal */}
+      <JitsiCallModal
+        visible={showJitsiModal}
+        roomName={currentActiveRoomId || ''}
+        onClose={() => setShowJitsiModal(false)}
+      />
     </KeyboardAvoidingView>
   );
 }
