@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Modal, View, StyleSheet, TouchableOpacity } from 'react-native';
+import { StyleSheet, TouchableOpacity, View, Alert } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { JitsiMeeting } from '@jitsi/react-native-sdk';
 import { X } from 'lucide-react-native';
 import { getMatrixClient } from '../services/MatrixService';
@@ -7,16 +8,19 @@ import { getMatrixClient } from '../services/MatrixService';
 interface JitsiCallModalProps {
     visible: boolean;
     roomName: string;
-    onClose: () => void;
+    onClose: (isEndedForAll?: boolean) => void;
     serverURL?: string;
     token?: string;
+    isHost?: boolean;
 }
 
-export function JitsiCallModal({ visible, roomName, onClose, serverURL = 'https://jitsi.5hpc.com', token }: JitsiCallModalProps) {
+export function JitsiCallModal({ visible, roomName, onClose, serverURL = 'https://jitsi.5hpc.com', token, isHost }: JitsiCallModalProps) {
     const [isReady, setIsReady] = useState(false);
+    const hasPrompted = React.useRef(false);
 
     useEffect(() => {
         if (visible) {
+            hasPrompted.current = false;
             // Wait for Modal slide animation to complete before mounting heavy Jitsi Native View
             const timer = setTimeout(() => setIsReady(true), 500);
             return () => clearTimeout(timer);
@@ -37,18 +41,29 @@ export function JitsiCallModal({ visible, roomName, onClose, serverURL = 'https:
     const displayName = user?.displayName || 'ChatHPC User';
     const avatarUrl = user?.avatarUrl ? client?.mxcUrlToHttp(user.avatarUrl) : '';
 
+    const handleExit = () => {
+        if (hasPrompted.current) return;
+        hasPrompted.current = true;
+        
+        if (isHost) {
+            onClose(true);
+        } else {
+            onClose(false);
+        }
+    };
+
     return (
-        <View style={[StyleSheet.absoluteFill, styles.container, { zIndex: 99999 }]}>
+        <SafeAreaView style={[StyleSheet.absoluteFill, styles.container, { zIndex: 99999 }]} edges={['top', 'bottom', 'left', 'right']}>
             {isReady && (
                 <JitsiMeeting
                     eventListeners={{
                         onReadyToClose: () => {
                             console.log("[Jitsi] onReadyToClose fired!");
-                            onClose();
+                            handleExit();
                         },
                         onConferenceLeft: () => {
-                            console.log("[Jitsi] onConferenceLeft fired!");
-                            onClose();
+                            console.log("[Jitsi] onConferenceLeft fired!", arguments);
+                            handleExit();
                         },
                     }}
                     room={finalRoomName}
@@ -69,8 +84,8 @@ export function JitsiCallModal({ visible, roomName, onClose, serverURL = 'https:
                     style={{ flex: 1 }}
                 />
             )}
-            
-        </View>
+
+        </SafeAreaView>
     );
 }
 

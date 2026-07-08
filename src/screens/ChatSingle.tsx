@@ -478,7 +478,8 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
               msgType = 'm.jitsi.call';
               text = 'Cuộc gọi video nhóm';
               // Check if the current state of this widget is empty (ended)
-              const currentStateEvents = room.currentState.getStateEvents("im.vector.modular.widgets");
+              let currentStateEvents = room.currentState.getStateEvents("im.vector.modular.widgets");
+              if (!Array.isArray(currentStateEvents)) currentStateEvents = currentStateEvents ? [currentStateEvents] : [];
               const currentEvent = currentStateEvents.find((evt: any) => evt.getStateKey() === stateKey);
               if (currentEvent) {
                 const currentContent = currentEvent.getContent();
@@ -604,7 +605,19 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
           matrixEvent: e
         };
       })
-      .filter((msg: any) => msg && !(msg.msgType === 'm.system' && !msg.text));
+      .filter((msg: any) => {
+        if (!msg) return false;
+        if (msg.msgType === 'm.system' && !msg.text) return false;
+        
+        // Hide fallback Jitsi messages from timeline because ChatHPC uses the native state events (im.vector.modular.widgets)
+        const content = msg.matrixEvent?.getContent?.() || {};
+        const clearContent = msg.matrixEvent?.getClearContent?.() || {};
+        if (content["org.eclo.jitsi"] || content["org.eclo.jitsi_end"] || clearContent["org.eclo.jitsi"] || clearContent["org.eclo.jitsi_end"]) {
+          return false;
+        }
+
+        return true;
+      });
 
     const grouped: any[] = [];
     let currentGroup: any[] = [];
@@ -1204,6 +1217,9 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
 
     const onRoomState = (event: any, state: any) => {
       if (event.getRoomId() === currentActiveRoomId) {
+        if (event.getType() === 'im.vector.modular.widgets') {
+          // Widget updates are handled by updateWidget in another useEffect
+        }
         let avatarUrl = room.getAvatarUrl(client.getHomeserverUrl(), 96, 96, 'crop', false, false);
         if (avatarUrl) avatarUrl = avatarUrl.replace(/\/_matrix\/media\/(r0|v3)\/(download|thumbnail)\//, '/_matrix/client/v1/media/$2/');
         const topicEvent = room.currentState.getStateEvents('m.room.topic', '');
@@ -1490,11 +1506,46 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
                   };
 
                   await client.sendStateEvent(currentActiveRoomId, "im.vector.modular.widgets", content, widgetId);
+
+                  // Gửi m.room.message kèm 'org.eclo.jitsi' để chathpc-mobile (Web App) hiển thị thẻ Call Invite
+                  const jitsiCallEvent = {
+                    id: widgetId,
+                    type: "video",
+                    url: `https://${jitsiDomain}/${confId}`,
+                    roomName: confId,
+                    domain: jitsiDomain,
+                    creator: client.getUserId(),
+                    roomId: currentActiveRoomId,
+                    ts: Date.now()
+                  };
+                  await client.sendEvent(currentActiveRoomId, "m.room.message", {
+                    msgtype: "m.text",
+                    body: "📹 Cuộc gọi video nhóm",
+                    "org.eclo.jitsi": jitsiCallEvent
+                  });
+
                   await joinJitsiCall(confId);
                 } catch (e: any) {
                   console.error("Failed to start Jitsi widget", e);
+                  
+                  const jitsiCallEvent = {
+                    id: widgetId,
+                    type: "video",
+                    url: `https://${jitsiDomain}/${confId}`,
+                    roomName: confId,
+                    domain: jitsiDomain,
+                    creator: client.getUserId(),
+                    roomId: currentActiveRoomId,
+                    ts: Date.now()
+                  };
+
                   if (e.errcode === 'M_FORBIDDEN' || e.message?.includes('403') || e.message?.includes('FORBIDDEN')) {
                     try {
+                      await client.sendEvent(currentActiveRoomId, "m.room.message", {
+                        msgtype: "m.text",
+                        body: "📹 Cuộc gọi video nhóm",
+                        "org.eclo.jitsi": jitsiCallEvent
+                      });
                       await joinJitsiCall(confId);
                     } catch (err) {
                       console.error("Failed to send fallback message", err);
@@ -1542,6 +1593,11 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
                 if (client && currentActiveRoomId && activeJitsiWidget) {
                   try {
                     await client.sendStateEvent(currentActiveRoomId, "im.vector.modular.widgets", {}, activeJitsiWidget.getStateKey());
+                    await client.sendEvent(currentActiveRoomId, "m.room.message", {
+                      msgtype: "m.text",
+                      body: "Cuộc gọi nhóm đã kết thúc",
+                      "org.eclo.jitsi_end": { id: activeJitsiWidget.getStateKey() }
+                    });
                   } catch (e) { console.error("End call failed", e); }
                 }
               }}
@@ -1835,15 +1891,27 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
         visible={showJitsiModal}
         roomName={jitsiRoomId || currentActiveRoomId || ''}
         token={jitsiToken}
-        onClose={async () => {
+        isHost={activeJitsiWidget?.getContent()?.creatorUserId === getMatrixClient()?.getUserId()}
+        onClose={async (isEndedForAll?: boolean) => {
           setShowJitsiModal(false);
           setJitsiToken('');
+          
           const client = getMatrixClient();
           if (client && currentActiveRoomId && activeJitsiWidget) {
-            try {
-              await client.sendStateEvent(currentActiveRoomId, "im.vector.modular.widgets", {}, activeJitsiWidget.getStateKey());
-            } catch (e) {
-              console.log("Failed to end widget on close", e);
+            const widgetContent = activeJitsiWidget.getContent();
+            if (widgetContent.creatorUserId === client.getUserId()) {
+              if (isEndedForAll === true) {
+                try {
+                  await client.sendStateEvent(currentActiveRoomId, "im.vector.modular.widgets", {}, activeJitsiWidget.getStateKey());
+                  await client.sendEvent(currentActiveRoomId, "m.room.message", {
+                    msgtype: "m.text",
+                    body: "Cuộc gọi video nhóm đã kết thúc",
+                    "org.eclo.jitsi_end": { id: activeJitsiWidget.getStateKey() }
+                  });
+                } catch (e) {
+                  console.error("Failed to end widget", e);
+                }
+              }
             }
           }
         }}
