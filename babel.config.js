@@ -4,7 +4,16 @@ module.exports = function (api) {
     presets: ['babel-preset-expo'],
     plugins: [
       'nativewind/babel',
-      'babel-plugin-transform-import-meta'
+      'babel-plugin-transform-import-meta',
+      [
+        'module-resolver',
+        {
+          root: ['./src'],
+          alias: {
+            '@giphy/react-native-sdk': './src/mocks/giphy.js',
+          },
+        },
+      ],
     ],
   };
 };

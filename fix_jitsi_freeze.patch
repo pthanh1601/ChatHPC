@@ -1,0 +1,17 @@
+--- Riot/Modules/Integrations/Widgets/Jitsi/JitsiViewController.m
++++ Riot/Modules/Integrations/Widgets/Jitsi/JitsiViewController.m
+@@ -194,6 +194,15 @@
+ - (void)hangup
+ {
+     [self.jitsiMeetView leave];
++    
++    // Fallback: If JitsiMeetView fails to fire conferenceTerminated (e.g. from pre-join screen),
++    // force dismiss after 1.5 seconds to prevent freezing.
++    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
++        if (self.presentingViewController) {
++            [self dismissViewControllerAnimated:YES completion:nil];
++        }
++    });
+ }
+ 
+ - (NSUInteger)callDuration

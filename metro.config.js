@@ -46,6 +46,14 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
     };
   }
 
+  // Chặn lỗi thiếu module @giphy/react-native-sdk của jitsi
+  if (moduleName === '@giphy/react-native-sdk') {
+    return {
+      type: 'sourceFile',
+      filePath: path.resolve(__dirname, 'src/mocks/giphy.js'),
+    };
+  }
+
   // Bypass lỗi quét tĩnh khi matrix-js-sdk tìm TextEncoder trong util
   if (moduleName === 'util') {
     return {

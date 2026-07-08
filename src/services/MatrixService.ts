@@ -59,76 +59,76 @@ export const leftRoomsLocal = new Set<string>();
 
 
 export const getSystemMessageText = (event: any, room: any): string | null => {
-  const type = event.getType();
-  const senderId = event.getSender();
-  const senderName = room.getMember(senderId)?.name || senderId;
+    const type = event.getType();
+    const senderId = event.getSender();
+    const senderName = room.getMember(senderId)?.name || senderId;
 
-  if (type === 'm.room.member') {
-    const content = event.getContent();
-    const prevContent = event.getPrevContent();
-    const targetId = event.getStateKey();
-    const targetName = room.getMember(targetId)?.name || targetId;
+    if (type === 'm.room.member') {
+        const content = event.getContent();
+        const prevContent = event.getPrevContent();
+        const targetId = event.getStateKey();
+        const targetName = room.getMember(targetId)?.name || targetId;
 
-    const membership = content.membership;
-    const prevMembership = prevContent?.membership;
+        const membership = content.membership;
+        const prevMembership = prevContent?.membership;
 
-    if (membership === 'invite') {
-      return `${senderName} đã mời ${targetName}`;
-    } else if (membership === 'join') {
-      if (prevMembership !== 'join') {
-        return `${targetName} đã tham gia phòng`;
-      } else {
-        if (content.displayname !== prevContent?.displayname) {
-          const oldRaw = prevContent?.displayname || targetId;
-          const newRaw = content.displayname || targetId;
-          const oldName = oldRaw.replace(/(\s*\[.*?\])+\s*$/, '');
-          const newName = newRaw.replace(/(\s*\[.*?\])+\s*$/, '');
-          
-          if (oldName === newName) {
-            return null; // Bỏ qua nếu chỉ đổi số điện thoại ẩn
-          }
-          return `${oldName} đã đổi tên thành ${newName}`;
+        if (membership === 'invite') {
+            return `${senderName} đã mời ${targetName}`;
+        } else if (membership === 'join') {
+            if (prevMembership !== 'join') {
+                return `${targetName} đã tham gia phòng`;
+            } else {
+                if (content.displayname !== prevContent?.displayname) {
+                    const oldRaw = prevContent?.displayname || targetId;
+                    const newRaw = content.displayname || targetId;
+                    const oldName = oldRaw.replace(/(\s*\[.*?\])+\s*$/, '');
+                    const newName = newRaw.replace(/(\s*\[.*?\])+\s*$/, '');
+
+                    if (oldName === newName) {
+                        return null; // Bỏ qua nếu chỉ đổi số điện thoại ẩn
+                    }
+                    return `${oldName} đã đổi tên thành ${newName}`;
+                }
+                if (content.avatar_url !== prevContent?.avatar_url) {
+                    return `${targetName} đã thay đổi ảnh đại diện`;
+                }
+            }
+        } else if (membership === 'leave') {
+            if (senderId === targetId) {
+                if (prevMembership === 'invite') {
+                    return `${targetName} đã từ chối lời mời`;
+                }
+                return `${targetName} đã rời phòng`;
+            } else {
+                if (prevMembership === 'invite') {
+                    return `${senderName} đã thu hồi lời mời đối với ${targetName}`;
+                }
+                return `${senderName} đã xoá ${targetName}`;
+            }
+        } else if (membership === 'ban') {
+            return `${senderName} đã cấm ${targetName}`;
         }
-        if (content.avatar_url !== prevContent?.avatar_url) {
-          return `${targetName} đã thay đổi ảnh đại diện`;
+    } else if (type === 'm.room.name') {
+        const name = event.getContent().name;
+        const prevName = event.getPrevContent()?.name;
+        if (name) {
+            if (prevName) {
+                return `${senderName} đã đổi tên phòng thành "${name}"`;
+            } else {
+                return `${senderName} đã đặt tên phòng là "${name}"`;
+            }
+        } else {
+            return `${senderName} đã xóa tên phòng`;
         }
-      }
-    } else if (membership === 'leave') {
-      if (senderId === targetId) {
-        if (prevMembership === 'invite') {
-          return `${targetName} đã từ chối lời mời`;
-        }
-        return `${targetName} đã rời phòng`;
-      } else {
-        if (prevMembership === 'invite') {
-          return `${senderName} đã thu hồi lời mời đối với ${targetName}`;
-        }
-        return `${senderName} đã xoá ${targetName}`;
-      }
-    } else if (membership === 'ban') {
-      return `${senderName} đã cấm ${targetName}`;
+    } else if (type === 'm.room.avatar') {
+        return `${senderName} đã thay đổi ảnh phòng`;
+    } else if (type === 'm.room.topic') {
+        return `${senderName} đã thay đổi chủ đề phòng`;
+    } else if (type === 'm.room.create') {
+        return `${senderName} đã tạo phòng`;
     }
-  } else if (type === 'm.room.name') {
-    const name = event.getContent().name;
-    const prevName = event.getPrevContent()?.name;
-    if (name) {
-      if (prevName) {
-        return `${senderName} đã đổi tên phòng thành "${name}"`;
-      } else {
-        return `${senderName} đã đặt tên phòng là "${name}"`;
-      }
-    } else {
-      return `${senderName} đã xóa tên phòng`;
-    }
-  } else if (type === 'm.room.avatar') {
-    return `${senderName} đã thay đổi ảnh phòng`;
-  } else if (type === 'm.room.topic') {
-    return `${senderName} đã thay đổi chủ đề phòng`;
-  } else if (type === 'm.room.create') {
-    return `${senderName} đã tạo phòng`;
-  }
 
-  return null;
+    return null;
 };
 
 class MatrixService extends EventEmitter {
@@ -487,7 +487,7 @@ class MatrixService extends EventEmitter {
         });
 
         await this.client.startClient({
-            initialSyncLimit: 5,
+            initialSyncLimit: 30,
             lazyLoadMembers: true
         });
 

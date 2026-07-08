@@ -1,6 +1,6 @@
-import React from 'react';
-import { Modal, View, StyleSheet, TouchableOpacity, SafeAreaView } from 'react-native';
-import { WebView } from 'react-native-webview';
+import React, { useState, useEffect } from 'react';
+import { Modal, View, StyleSheet, TouchableOpacity } from 'react-native';
+import { JitsiMeeting } from '@jitsi/react-native-sdk';
 import { X } from 'lucide-react-native';
 import { getMatrixClient } from '../services/MatrixService';
 
@@ -9,9 +9,22 @@ interface JitsiCallModalProps {
     roomName: string;
     onClose: () => void;
     serverURL?: string;
+    token?: string;
 }
 
-export function JitsiCallModal({ visible, roomName, onClose, serverURL = 'https://jitsi.5hpc.com' }: JitsiCallModalProps) {
+export function JitsiCallModal({ visible, roomName, onClose, serverURL = 'https://jitsi.5hpc.com', token }: JitsiCallModalProps) {
+    const [isReady, setIsReady] = useState(false);
+
+    useEffect(() => {
+        if (visible) {
+            // Wait for Modal slide animation to complete before mounting heavy Jitsi Native View
+            const timer = setTimeout(() => setIsReady(true), 500);
+            return () => clearTimeout(timer);
+        } else {
+            setIsReady(false);
+        }
+    }, [visible]);
+
     if (!visible) return null;
 
     // Clean up room name to be a valid Jitsi room (alphanumeric)
@@ -22,40 +35,42 @@ export function JitsiCallModal({ visible, roomName, onClose, serverURL = 'https:
     const userId = client?.getUserId() || '';
     const user = client ? client.getUser(userId) : null;
     const displayName = user?.displayName || 'ChatHPC User';
-
-    // Construct Jitsi Web URL with config parameters embedded
-    // config.prejoinPageEnabled=false skips the prejoin screen
-    const jitsiUrl = `${serverURL}/${finalRoomName}#config.prejoinPageEnabled=false&userInfo.displayName="${encodeURIComponent(displayName)}"`;
+    const avatarUrl = user?.avatarUrl ? client?.mxcUrlToHttp(user.avatarUrl) : '';
 
     return (
-        <Modal
-            visible={visible}
-            animationType="slide"
-            presentationStyle="fullScreen"
-            onRequestClose={onClose}
-        >
-            <View style={styles.container}>
-                <SafeAreaView style={{ flex: 1, backgroundColor: '#1e1e1e' }}>
-                    <WebView
-                        source={{ uri: jitsiUrl }}
-                        style={{ flex: 1, backgroundColor: '#1e1e1e' }}
-                        allowsInlineMediaPlayback={true}
-                        mediaPlaybackRequiresUserAction={false}
-                        mediaCapturePermissionGrantType="grant"
-                        javaScriptEnabled={true}
-                        domStorageEnabled={true}
-                    />
-                </SafeAreaView>
-                
-                {/* Fallback close button */}
-                <TouchableOpacity 
-                    style={styles.closeButton} 
-                    onPress={onClose}
-                >
-                    <X color="white" size={24} />
-                </TouchableOpacity>
-            </View>
-        </Modal>
+        <View style={[StyleSheet.absoluteFill, styles.container, { zIndex: 99999 }]}>
+            {isReady && (
+                <JitsiMeeting
+                    eventListeners={{
+                        onReadyToClose: () => {
+                            console.log("[Jitsi] onReadyToClose fired!");
+                            onClose();
+                        },
+                        onConferenceLeft: () => {
+                            console.log("[Jitsi] onConferenceLeft fired!");
+                            onClose();
+                        },
+                    }}
+                    room={finalRoomName}
+                    serverURL={serverURL}
+                    token={token}
+                    userInfo={{
+                        displayName: displayName,
+                        ...(avatarUrl ? { avatarURL: avatarUrl } : {})
+                    }}
+                    flags={{
+                        'prejoinpage.enabled': false,
+                        'welcomepage.enabled': false,
+                        'invite.enabled': false
+                    }}
+                    config={{
+                        prejoinPageEnabled: false
+                    }}
+                    style={{ flex: 1 }}
+                />
+            )}
+            
+        </View>
     );
 }
 
@@ -63,17 +78,7 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: '#1e1e1e',
-    },
-    closeButton: {
-        position: 'absolute',
-        top: 60,
-        left: 20,
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-        backgroundColor: 'rgba(0,0,0,0.6)',
-        justifyContent: 'center',
-        alignItems: 'center',
-        zIndex: 100,
     }
 });
+
+

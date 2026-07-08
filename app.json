@@ -12,7 +12,7 @@
     },
     "ios": {
       "bundleIdentifier": "chatapp.5hpc.app",
-      "buildNumber": "55",
+      "buildNumber": "57",
       "entitlements": {
         "aps-environment": "production"
       },
@@ -20,13 +20,15 @@
         "UIBackgroundModes": [
           "audio",
           "fetch",
-          "remote-notification"
+          "remote-notification",
+          "voip"
         ],
         "NSCameraUsageDescription": "Ứng dụng cần sử dụng camera để thực hiện cuộc gọi video.",
         "NSMicrophoneUsageDescription": "Ứng dụng cần sử dụng micro để truyền tải giọng nói khi gọi điện.",
         "NSPhotoLibraryUsageDescription": "ChatHPC cần quyền truy cập thư viện ảnh để cập nhật ảnh đại diện.",
         "NSPhotoLibraryAddOnlyUsageDescription": "ChatHPC cần quyền để lưu ảnh vào thiết bị.",
-        "NSFaceIDUsageDescription": "Cho phép ChatHPC sử dụng Face ID để đăng nhập nhanh chóng và bảo mật."
+        "NSFaceIDUsageDescription": "Cho phép ChatHPC sử dụng Face ID để đăng nhập nhanh chóng và bảo mật.",
+        "NSCalendarsUsageDescription": "Cho phép ChatHPC truy cập lịch để đồng bộ các sự kiện và cuộc họp."
       }
     },
     "android": {

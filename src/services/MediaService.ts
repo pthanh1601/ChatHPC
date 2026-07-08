@@ -69,7 +69,7 @@ class MediaService {
                 if (NativeMatrixCrypto) {
                     console.log(`🔒 [Swift Native Mode] Mã hóa tốc độ cao bằng CommonCrypto: ${file.name}`);
                     const nativeResult = await NativeMatrixCrypto.encryptFile(cleanUri, tempEncryptedUri);
-                    
+
                     encryptionInfo = {
                         v: "v2",
                         key: { alg: "A256CTR", ext: true, k: nativeResult.key, key_ops: ["encrypt", "decrypt"], kty: "oct" },
@@ -78,7 +78,7 @@ class MediaService {
                     };
                 } else if (nativeCrypto) {
                     console.log(`🔒 [Native Mode] Mã hóa file PHÂN MẢNH (Streaming) bằng Quick-Crypto: ${file.name}`);
-                    
+
                     const key = Buffer.from(nativeCrypto.randomBytes(32));
                     const iv = Buffer.from(nativeCrypto.randomBytes(16));
                     // Chuẩn Matrix (MSC1767): 8 byte cuối (64-bit) của IV phải bằng 0 để dùng làm Counter
@@ -86,26 +86,26 @@ class MediaService {
 
                     const cipher = nativeCrypto.createCipheriv('aes-256-ctr', key, iv);
                     const sha256 = nativeCrypto.createHash('sha256');
-                    
+
                     let position = 0;
                     while (position < finalSize) {
                         const lengthToRead = Math.min(CHUNK_SIZE, finalSize - position);
                         const b64Chunk = await RNFS.read(cleanUri, lengthToRead, position, 'base64');
                         const chunkBuffer = Buffer.from(b64Chunk, 'base64');
-                        
+
                         const encryptedBuffer = Buffer.from(cipher.update(chunkBuffer));
                         sha256.update(encryptedBuffer);
-                        
+
                         await RNFS.appendFile(tempEncryptedUri, encryptedBuffer.toString('base64'), 'base64');
                         position += lengthToRead;
                     }
-                    
+
                     const finalBuffer = Buffer.from(cipher.final());
                     if (finalBuffer.length > 0) {
                         sha256.update(finalBuffer);
                         await RNFS.appendFile(tempEncryptedUri, finalBuffer.toString('base64'), 'base64');
                     }
-                    
+
                     const sha256Hash = sha256.digest('base64');
 
                     encryptionInfo = {
@@ -119,20 +119,20 @@ class MediaService {
                     console.log(`🔒 [JS Fallback Mode] Mã hóa file PHÂN MẢNH bằng crypto-js: ${file.name}`);
                     const key = CryptoJS.lib.WordArray.random(32);
                     const iv = CryptoJS.lib.WordArray.random(16);
-                    iv.words[2] &= 0x7FFFFFFF; 
+                    iv.words[2] &= 0x7FFFFFFF;
                     iv.words[3] = 0; // Tránh tràn đếm
-                    
+
                     const encryptor = CryptoJS.algo.AES.createEncryptor(key, { iv: iv, mode: CryptoJS.mode.CTR, padding: CryptoJS.pad.NoPadding });
                     const sha256 = CryptoJS.algo.SHA256.create();
-                    
+
                     let position = 0;
                     while (position < finalSize) {
                         const lengthToRead = Math.min(CHUNK_SIZE, finalSize - position);
                         const b64Chunk = await RNFS.read(cleanUri, lengthToRead, position, 'base64');
                         const plaintextWordArray = CryptoJS.enc.Base64.parse(b64Chunk.replace(/[^A-Za-z0-9+/=]/g, ''));
-                        
+
                         const encryptedChunk = encryptor.process(plaintextWordArray);
-                        
+
                         if (encryptedChunk && encryptedChunk.sigBytes > 0) {
                             sha256.update(encryptedChunk);
                             const chunkBase64 = encryptedChunk.toString(CryptoJS.enc.Base64);
@@ -140,16 +140,16 @@ class MediaService {
                         }
                         position += lengthToRead;
                     }
-                    
+
                     const finalChunk = encryptor.finalize();
                     if (finalChunk && finalChunk.sigBytes > 0) {
                         sha256.update(finalChunk);
                         const finalBase64 = finalChunk.toString(CryptoJS.enc.Base64);
                         await RNFS.appendFile(tempEncryptedUri, finalBase64, 'base64');
                     }
-                    
+
                     const hashBase64 = sha256.finalize().toString(CryptoJS.enc.Base64); // CHUẨN CÓ DẤU =
-                    
+
                     encryptionInfo = {
                         v: "v2",
                         key: { alg: "A256CTR", ext: true, k: toBase64UrlUnpaddedJS(key), key_ops: ["encrypt", "decrypt"], kty: "oct" },
@@ -157,7 +157,7 @@ class MediaService {
                         hashes: { sha256: hashBase64 }
                     };
                 }
-                
+
                 fileUriToUpload = 'file://' + tempEncryptedUri;
                 uploadMimeType = "application/octet-stream";
             }
@@ -177,7 +177,7 @@ class MediaService {
             throw error;
         } finally {
             if (tempEncryptedUri) {
-                await FileSystem.deleteAsync(tempEncryptedUri, { idempotent: true }).catch(() => {});
+                await FileSystem.deleteAsync(tempEncryptedUri, { idempotent: true }).catch(() => { });
             }
         }
     }
@@ -260,7 +260,7 @@ class MediaService {
                 let kBase64 = file.key.k.replace(/-/g, '+').replace(/_/g, '/');
                 while (kBase64.length % 4) kBase64 += '=';
                 const key = Buffer.from(kBase64, 'base64');
-                
+
                 let ivBase64 = file.iv.replace(/-/g, '+').replace(/_/g, '/');
                 while (ivBase64.length % 4) ivBase64 += '=';
                 const iv = Buffer.from(ivBase64, 'base64');
@@ -279,11 +279,11 @@ class MediaService {
                 const iv = CryptoJS.enc.Base64.parse(ivBase64);
 
                 const decryptor = CryptoJS.algo.AES.createDecryptor(key, { iv: iv, mode: CryptoJS.mode.CTR, padding: CryptoJS.pad.NoPadding });
-                
+
                 // Giải mã nguyên khối (One-pass) tương tự như mã hóa để tránh rủi ro đứt gãy
                 const b64Data = await FileSystem.readAsStringAsync(downloadResult.uri, { encoding: FileSystem.EncodingType.Base64 });
                 const ciphertextWordArray = CryptoJS.enc.Base64.parse(b64Data.replace(/[^A-Za-z0-9+/=]/g, ''));
-                
+
                 const decryptedChunk = decryptor.process(ciphertextWordArray);
                 const finalChunk = decryptor.finalize();
 
@@ -293,7 +293,7 @@ class MediaService {
                 }
 
                 const finalBase64Data = finalWordArray.toString(CryptoJS.enc.Base64);
-                
+
                 await FileSystem.writeAsStringAsync(outputUri, finalBase64Data, { encoding: FileSystem.EncodingType.Base64 });
             }
 

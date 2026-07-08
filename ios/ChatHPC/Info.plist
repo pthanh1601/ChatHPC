@@ -38,7 +38,7 @@
       </dict>
     </array>
     <key>CFBundleVersion</key>
-    <string>55</string>
+    <string>57</string>
     <key>LSRequiresIPhoneOS</key>
     <true/>
     <key>NSAppTransportSecurity</key>
@@ -48,6 +48,8 @@
       <key>NSAllowsLocalNetworking</key>
       <true/>
     </dict>
+    <key>NSCalendarsUsageDescription</key>
+    <string>Cho phép ChatHPC truy cập lịch để đồng bộ các sự kiện và cuộc họp.</string>
     <key>NSCameraUsageDescription</key>
     <string>Cho phép ứng dụng sử dụng Camera để gọi Video.</string>
     <key>NSContactsUsageDescription</key>
@@ -65,6 +67,7 @@
       <string>audio</string>
       <string>fetch</string>
       <string>remote-notification</string>
+      <string>voip</string>
     </array>
     <key>UILaunchStoryboardName</key>
     <string>SplashScreen</string>

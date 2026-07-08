@@ -23,6 +23,7 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import * as VideoThumbnails from 'expo-video-thumbnails';
 import { Video as CompressorVideo } from 'react-native-compressor';
 import { JitsiCallModal } from '../components/JitsiCallModal';
+import { base32Encode, generateJitsiJWT } from '../utils/JitsiAuth';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -351,7 +352,28 @@ const SystemMessageGroup = ({ msg }: { msg: any }) => {
 export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void }) {
   const [inputText, setInputText] = useState('');
   const [showJitsiModal, setShowJitsiModal] = useState(false);
+  const [jitsiToken, setJitsiToken] = useState<string>('');
+  const [jitsiRoomId, setJitsiRoomId] = useState<string>('');
   const [activeJitsiWidget, setActiveJitsiWidget] = useState<any>(null);
+
+  const joinJitsiCall = async (conferenceId: string) => {
+    const client = getMatrixClient();
+    if (client) {
+      try {
+        const openIdToken = await client.getOpenIdToken();
+        const userId = client.getUserId() || '';
+        const user = client.getUser(userId);
+        const displayName = user?.displayName || 'ChatHPC User';
+        const avatarUrl = user?.avatarUrl ? client.mxcUrlToHttp(user.avatarUrl) || '' : '';
+        const jwtToken = generateJitsiJWT(openIdToken, currentActiveRoomId || '', "jitsi.5hpc.com", displayName, avatarUrl);
+        setJitsiToken(jwtToken);
+      } catch (e) {
+        console.error("Failed to generate JWT on join", e);
+      }
+    }
+    setJitsiRoomId(conferenceId);
+    setShowJitsiModal(true);
+  };
 
   useEffect(() => {
     const client = getMatrixClient();
@@ -361,15 +383,28 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
       const room = client.getRoom(currentActiveRoomId);
       if (!room) return;
       const events = room.currentState.getStateEvents("im.vector.modular.widgets");
+      // Filter for Jitsi widgets, or deleted widgets that WERE Jitsi (by checking state key prefix)
       const jitsiEvents = events.filter((e: any) => {
         const type = e.getContent()?.type;
-        return type === 'jitsi' || type === 'm.jitsi';
+        const stateKey = e.getStateKey();
+        return type === 'jitsi' || type === 'm.jitsi' || (stateKey && stateKey.startsWith('jitsi_'));
       });
-      const active = jitsiEvents.find((e: any) => {
-        const content = e.getContent();
-        return content && content.type && Object.keys(content).length > 0;
-      });
-      setActiveJitsiWidget(active || null);
+
+      // Sort by timestamp descending (newest first)
+      jitsiEvents.sort((a: any, b: any) => b.getTs() - a.getTs());
+
+      if (jitsiEvents.length > 0) {
+        const newestEvent = jitsiEvents[0];
+        const content = newestEvent.getContent();
+        // If the newest event is empty (deleted), there is no active call
+        if (content && content.type && Object.keys(content).length > 0) {
+          setActiveJitsiWidget(newestEvent);
+        } else {
+          setActiveJitsiWidget(null);
+        }
+      } else {
+        setActiveJitsiWidget(null);
+      }
     };
 
     updateWidget();
@@ -397,7 +432,7 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
         const type = e.getType();
         return type === 'm.room.message' || type === 'm.room.encrypted' || type === 'm.call.invite' ||
           type === 'm.room.member' || type === 'm.room.name' || type === 'm.room.avatar' ||
-          type === 'm.room.topic' || type === 'm.room.create';
+          type === 'm.room.topic' || type === 'm.room.create' || type === 'im.vector.modular.widgets';
       })
       .map((e: any) => {
         const date = new Date(e.getTs());
@@ -432,7 +467,40 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
         }
         // -------------------------
 
-        if (type === 'm.call.invite') {
+        if (type === 'im.vector.modular.widgets') {
+          const content = e.getContent();
+          const stateKey = e.getStateKey();
+          const isJitsi = content.type === 'jitsi' || content.type === 'm.jitsi' || (stateKey && stateKey.startsWith('jitsi_'));
+
+          if (isJitsi) {
+            const isCreation = content && content.type && Object.keys(content).length > 0;
+            if (isCreation) {
+              msgType = 'm.jitsi.call';
+              text = 'Cuộc gọi video nhóm';
+              // Check if the current state of this widget is empty (ended)
+              const currentStateEvents = room.currentState.getStateEvents("im.vector.modular.widgets");
+              const currentEvent = currentStateEvents.find((evt: any) => evt.getStateKey() === stateKey);
+              if (currentEvent) {
+                const currentContent = currentEvent.getContent();
+                if (!currentContent || !currentContent.type || Object.keys(currentContent).length === 0) {
+                  msgType = 'm.jitsi.call_ended';
+                  text = 'Cuộc gọi video nhóm đã kết thúc';
+                }
+              } else {
+                // If it doesn't exist in current state, it's ended
+                msgType = 'm.jitsi.call_ended';
+                text = 'Cuộc gọi video nhóm đã kết thúc';
+              }
+            } else {
+              // It's a deletion event (Call ended)
+              msgType = 'm.jitsi.call_ended';
+              text = 'Cuộc gọi video nhóm đã kết thúc';
+            }
+          } else {
+            // Other widgets, ignore or treat as system
+            return null; // Ignore non-jitsi widgets
+          }
+        } else if (type === 'm.call.invite') {
           msgType = 'm.call';
           const isVideo = e.getContent()?.offer?.sdp?.includes('m=video');
           const callId = e.getContent()?.call_id;
@@ -536,7 +604,7 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
           matrixEvent: e
         };
       })
-      .filter((msg: any) => !(msg.msgType === 'm.system' && !msg.text));
+      .filter((msg: any) => msg && !(msg.msgType === 'm.system' && !msg.text));
 
     const grouped: any[] = [];
     let currentGroup: any[] = [];
@@ -674,17 +742,17 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
                   if (NativeMatrixCrypto) {
                     console.log(`Video quá lớn (${asset.fileSize} bytes). Bắt đầu ép dung lượng bằng Native như Element...`);
                     let tempOutPath = FileSystem.cacheDirectory + 'compressed_' + Date.now() + '.mp4';
-                    
+
                     try {
                       // Gọi Native module (đã được viết giống Element: ưu tiên 1080p, nếu vẫn to sẽ hạ xuống 720p hoặc Medium)
                       const compressedResult = await NativeMatrixCrypto.compressVideo(asset.uri, tempOutPath, 48);
-                      
+
                       const newFileInfo = await FileSystem.getInfoAsync(compressedResult.uri);
                       if (newFileInfo.exists && newFileInfo.size > 0) {
                         asset.uri = compressedResult.uri;
                         asset.fileSize = newFileInfo.size;
                         console.log(`Ép dung lượng bằng Swift Native thành công: ${asset.fileSize} bytes`);
-                        
+
                         // Kiểm tra lại sau khi nén
                         if (asset.fileSize > 50 * 1024 * 1024) {
                           Alert.alert("Lỗi", `Video ${item.fileName} vẫn lớn hơn 50MB sau khi nén. Đã bỏ qua file này.`);
@@ -1378,31 +1446,56 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
               if (client && currentActiveRoomId) {
                 const widgetId = "jitsi_" + client.getUserId() + "_" + Date.now();
                 const jitsiDomain = "jitsi.5hpc.com";
-                const confId = currentActiveRoomId.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-                const content = {
-                  creatorUserId: client.getUserId(),
-                  data: { isAudioOnly: false },
-                  id: widgetId,
-                  name: "Jitsi",
-                  type: "jitsi",
-                  url: `https://${jitsiDomain}/${confId}`
-                };
+                const widgetSessionId = Math.random().toString(36).substring(2, 10);
+
+                // Element iOS requires Base32 without padding for conferenceId when using openidtoken-jwt
+                const confIdBase32 = base32Encode(currentActiveRoomId).toLowerCase();
+                const confId = confIdBase32;
+
                 try {
+                  // Element iOS requires Base32 without padding for conferenceId when using openidtoken-jwt
+                  const v1Params = [
+                    `confId=${confId}`,
+                    `isAudioConf=false`,
+                    `displayName=$matrix_display_name`,
+                    `avatarUrl=$matrix_avatar_url`,
+                    `email=$matrix_user_id`
+                  ].join('&');
+
+                  const v2Params = [
+                    `conferenceDomain=$domain`,
+                    `conferenceId=$conferenceId`,
+                    `isAudioOnly=$isAudioOnly`,
+                    `displayName=$matrix_display_name`,
+                    `avatarUrl=$matrix_avatar_url`,
+                    `userId=$matrix_user_id`,
+                    `auth=openidtoken-jwt`
+                  ].join('&');
+
+                  const widgetStringURL = `https://app.element.io/widgets/jitsi.html?${v1Params}#${v2Params}`;
+
+                  const content = {
+                    creatorUserId: client.getUserId(),
+                    data: {
+                      domain: jitsiDomain,
+                      conferenceId: confId,
+                      isAudioOnly: false,
+                      widgetSessionId: widgetSessionId,
+                      authenticationType: "openidtoken-jwt"
+                    },
+                    id: widgetId,
+                    name: "Jitsi",
+                    type: "jitsi",
+                    url: widgetStringURL
+                  };
+
                   await client.sendStateEvent(currentActiveRoomId, "im.vector.modular.widgets", content, widgetId);
-                  await client.sendEvent(currentActiveRoomId, "m.room.message", {
-                    msgtype: "m.text",
-                    body: "Đã bắt đầu cuộc gọi video Jitsi. Nhấn Tham Gia ở trên để vào.",
-                  });
-                  setShowJitsiModal(true);
+                  await joinJitsiCall(confId);
                 } catch (e: any) {
                   console.error("Failed to start Jitsi widget", e);
                   if (e.errcode === 'M_FORBIDDEN' || e.message?.includes('403') || e.message?.includes('FORBIDDEN')) {
                     try {
-                      await client.sendEvent(currentActiveRoomId, "m.room.message", {
-                        msgtype: "m.text",
-                        body: `Tôi đã mở phòng họp Video. Nếu bạn không thấy nút Tham gia, hãy copy link này dán vào trình duyệt: ${content.url}`,
-                      });
-                      setShowJitsiModal(true);
+                      await joinJitsiCall(confId);
                     } catch (err) {
                       console.error("Failed to send fallback message", err);
                       Alert.alert("Lỗi", "Bạn không có quyền tạo cuộc gọi trong phòng này.");
@@ -1433,13 +1526,17 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
             </View>
           </View>
           <View className="flex-row items-center gap-2">
-            <TouchableOpacity 
-              onPress={() => setShowJitsiModal(true)}
+            <TouchableOpacity
+              onPress={async () => {
+                const widgetData = activeJitsiWidget?.getContent()?.data;
+                const confId = widgetData?.conferenceId || currentActiveRoomId || '';
+                await joinJitsiCall(confId);
+              }}
               className="bg-[#34c759] py-2 px-5 rounded-full"
             >
               <Text className="text-white font-semibold">Tham gia</Text>
             </TouchableOpacity>
-            <TouchableOpacity 
+            <TouchableOpacity
               onPress={async () => {
                 const client = getMatrixClient();
                 if (client && currentActiveRoomId && activeJitsiWidget) {
@@ -1481,7 +1578,7 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
             const liveEvents = room?.getLiveTimeline().getEvents() || [];
             const hasCreateEvent = liveEvents.some((e: any) => e.getType() === 'm.room.create');
             const hasMoreHistory = room ? (!!room.getLiveTimeline().getPaginationToken("b") && !hasCreateEvent) : false;
-            
+
             const hasRealMessage = messages.some(m => m.msgType !== 'm.system' && m.msgType !== 'm.system_group');
             const shouldShowEmptyView = !hasMoreHistory || !hasRealMessage;
 
@@ -1493,14 +1590,14 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
                 {shouldShowEmptyView && (
                   <View className="items-center px-6 pt-4 pb-6">
                     {roomInfo.avatar ? (
-                      <Image 
+                      <Image
                         source={getMatrixClient()?.getAccessToken() && roomInfo.avatar.includes('_matrix')
                           ? { uri: roomInfo.avatar, headers: { Authorization: `Bearer ${getMatrixClient()?.getAccessToken()}` } }
-                          : { uri: roomInfo.avatar }} 
-                        className="w-20 h-20 rounded-full mb-4 border border-white/10" 
+                          : { uri: roomInfo.avatar }}
+                        className="w-20 h-20 rounded-full mb-4 border border-white/10"
                       />
                     ) : (
-                      <View 
+                      <View
                         className="w-20 h-20 rounded-full flex items-center justify-center mb-4 border border-white/10"
                         style={{ backgroundColor: getAvatarColor(currentActiveRoomId || '') }}
                       >
@@ -1550,6 +1647,32 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
                 <View className="flex-row justify-center mb-4">
                   <View className="bg-white/10 px-4 py-1.5 rounded-full border border-white/5 max-w-[80%]">
                     <Text className="text-xs text-gray-400 font-medium text-center">{msg.text}</Text>
+                  </View>
+                </View>
+              );
+            }
+            if (msg.msgType === 'm.jitsi.call' || msg.msgType === 'm.jitsi.call_ended') {
+              const isEnded = msg.msgType === 'm.jitsi.call_ended';
+              return (
+                <View className="flex-row justify-center mb-6 mt-2">
+                  <View className="bg-card w-[85%] rounded-2xl border border-white/10 overflow-hidden shadow-lg">
+                    <View className="bg-white/5 p-4 flex-row items-center gap-3">
+                      <View className={`w-10 h-10 rounded-full items-center justify-center ${isEnded ? 'bg-gray-500/20' : 'bg-green-500/20'}`}>
+                        <Video size={20} color={isEnded ? '#9ca3af' : '#34c759'} />
+                      </View>
+                      <View className="flex-1">
+                        <Text className="text-white font-semibold text-base">{msg.text}</Text>
+                        <Text className="text-gray-400 text-xs mt-0.5">{msg.senderName} • {msg.time}</Text>
+                      </View>
+                    </View>
+                    {!isEnded && (
+                      <TouchableOpacity
+                        onPress={() => joinJitsiCall(base32Encode(currentActiveRoomId || '').toLowerCase())}
+                        className="bg-[#34c759] py-3 items-center border-t border-white/5"
+                      >
+                        <Text className="text-white font-semibold text-sm">Tham gia cuộc gọi</Text>
+                      </TouchableOpacity>
+                    )}
                   </View>
                 </View>
               );
@@ -1613,7 +1736,7 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
           return (
             <View className="w-full z-50 px-5 pb-8 pt-4 bg-background/90 border-t border-white/5 items-center">
               <Text className="text-gray-400 mb-3 text-center">Bạn đang xem trước phòng này. Tham gia để trò chuyện.</Text>
-              <TouchableOpacity 
+              <TouchableOpacity
                 onPress={() => {
                   client?.joinRoom(currentActiveRoomId || '').then(() => {
                     Alert.alert("Thành công", "Đã tham gia phòng");
@@ -1634,84 +1757,96 @@ export function ChatSingle({ setScreen }: { setScreen: (s: AppScreen) => void })
         return (
           <View className="w-full z-50 px-5 pb-6 pt-4 bg-background/90">
             {showAttachMenu && !isRecording && (
-          <View className="pb-4 flex-row gap-6">
-            <TouchableOpacity onPress={handlePickImage} className="items-center">
-              <View className="w-12 h-12 bg-secondary/20 rounded-full flex items-center justify-center mb-2">
-                <ImageIcon size={22} color="#03B381" />
+              <View className="pb-4 flex-row gap-6">
+                <TouchableOpacity onPress={handlePickImage} className="items-center">
+                  <View className="w-12 h-12 bg-secondary/20 rounded-full flex items-center justify-center mb-2">
+                    <ImageIcon size={22} color="#03B381" />
+                  </View>
+                  <Text className="text-[11px] font-medium text-gray-300">Hình ảnh</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={handlePickDocument} className="items-center">
+                  <View className="w-12 h-12 bg-primary/20 rounded-full flex items-center justify-center mb-2">
+                    <FileIcon size={22} color="#0DBD8B" />
+                  </View>
+                  <Text className="text-[11px] font-medium text-gray-300">Tài liệu</Text>
+                </TouchableOpacity>
               </View>
-              <Text className="text-[11px] font-medium text-gray-300">Hình ảnh</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={handlePickDocument} className="items-center">
-              <View className="w-12 h-12 bg-primary/20 rounded-full flex items-center justify-center mb-2">
-                <FileIcon size={22} color="#0DBD8B" />
-              </View>
-              <Text className="text-[11px] font-medium text-gray-300">Tài liệu</Text>
-            </TouchableOpacity>
-          </View>
-        )}
+            )}
 
-        <View className="bg-card rounded-full p-1.5 flex-row items-center border border-white/10">
-          {isRecording ? (
-            <>
-              <TouchableOpacity onPress={() => stopRecording(false)} className="w-12 h-12 flex items-center justify-center bg-red-500/20 rounded-full mr-2">
-                <Trash2 size={22} color="#ef4444" />
-              </TouchableOpacity>
-              <View className="flex-1 flex-row items-center gap-2 px-2">
-                <View className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
-                <Text className="text-white text-[15px] font-medium">Đang ghi âm... {formatDurationStr(recordDuration)}</Text>
-              </View>
-              <TouchableOpacity onPress={() => stopRecording(true)} className="w-12 h-12 flex items-center justify-center rounded-full bg-primary shadow-lg shadow-primary/30">
-                <Send size={20} color="#22262E" style={{ marginLeft: -2 }} />
-              </TouchableOpacity>
-            </>
-          ) : (
-            <>
-              <TouchableOpacity onPress={() => setShowAttachMenu(!showAttachMenu)} className="w-12 h-12 flex items-center justify-center">
-                {showAttachMenu ? <X size={24} color="#a0a0a0" /> : <Plus size={28} color="#0DBD8B" />}
-              </TouchableOpacity>
-              <View className="flex-1 h-12 bg-background/50 rounded-full justify-center px-4 mx-1">
-                <TextInput
-                  placeholder="Nhập tin nhắn..."
-                  placeholderTextColor="#a0a0a0"
-                  value={inputText}
-                  onChangeText={handleInputChange}
-                  onFocus={() => {
-                    setShowAttachMenu(false);
-                    if (showScrollDown) {
-                      setTimeout(() => flatListRef.current?.scrollToOffset({ offset: 0, animated: true }), 100);
-                    }
-                  }}
-                  multiline={true}
-                  blurOnSubmit={false}
-                  className="w-full text-base text-white p-0"
-                  style={{
-                    includeFontPadding: false,
-                    textAlignVertical: 'center',
-                    paddingVertical: 0,
-                    marginTop: -4
-                  }}
-                />
-              </View>
-              {inputText.trim().length === 0 ? (
-                <TouchableOpacity onPress={startRecording} className="w-12 h-12 flex items-center justify-center mr-1">
-                  <Mic size={24} color="#03B381" />
-                </TouchableOpacity>
+            <View className="bg-card rounded-full p-1.5 flex-row items-center border border-white/10">
+              {isRecording ? (
+                <>
+                  <TouchableOpacity onPress={() => stopRecording(false)} className="w-12 h-12 flex items-center justify-center bg-red-500/20 rounded-full mr-2">
+                    <Trash2 size={22} color="#ef4444" />
+                  </TouchableOpacity>
+                  <View className="flex-1 flex-row items-center gap-2 px-2">
+                    <View className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
+                    <Text className="text-white text-[15px] font-medium">Đang ghi âm... {formatDurationStr(recordDuration)}</Text>
+                  </View>
+                  <TouchableOpacity onPress={() => stopRecording(true)} className="w-12 h-12 flex items-center justify-center rounded-full bg-primary shadow-lg shadow-primary/30">
+                    <Send size={20} color="#22262E" style={{ marginLeft: -2 }} />
+                  </TouchableOpacity>
+                </>
               ) : (
-                <TouchableOpacity onPress={handleSend} className="w-12 h-12 flex items-center justify-center rounded-full bg-bubble shadow-lg shadow-primary/20">
-                  <Send size={20} color="#fff" />
-                </TouchableOpacity>
+                <>
+                  <TouchableOpacity onPress={() => setShowAttachMenu(!showAttachMenu)} className="w-12 h-12 flex items-center justify-center">
+                    {showAttachMenu ? <X size={24} color="#a0a0a0" /> : <Plus size={28} color="#0DBD8B" />}
+                  </TouchableOpacity>
+                  <View className="flex-1 h-12 bg-background/50 rounded-full justify-center px-4 mx-1">
+                    <TextInput
+                      placeholder="Nhập tin nhắn..."
+                      placeholderTextColor="#a0a0a0"
+                      value={inputText}
+                      onChangeText={handleInputChange}
+                      onFocus={() => {
+                        setShowAttachMenu(false);
+                        if (showScrollDown) {
+                          setTimeout(() => flatListRef.current?.scrollToOffset({ offset: 0, animated: true }), 100);
+                        }
+                      }}
+                      multiline={true}
+                      blurOnSubmit={false}
+                      className="w-full text-base text-white p-0"
+                      style={{
+                        includeFontPadding: false,
+                        textAlignVertical: 'center',
+                        paddingVertical: 0,
+                        marginTop: -4
+                      }}
+                    />
+                  </View>
+                  {inputText.trim().length === 0 ? (
+                    <TouchableOpacity onPress={startRecording} className="w-12 h-12 flex items-center justify-center mr-1">
+                      <Mic size={24} color="#03B381" />
+                    </TouchableOpacity>
+                  ) : (
+                    <TouchableOpacity onPress={handleSend} className="w-12 h-12 flex items-center justify-center rounded-full bg-bubble shadow-lg shadow-primary/20">
+                      <Send size={20} color="#fff" />
+                    </TouchableOpacity>
+                  )}
+                </>
               )}
-            </>
-          )}
-        </View>
-      </View>
+            </View>
+          </View>
         );
       })()}
       {/* Jitsi Group Call Modal */}
       <JitsiCallModal
         visible={showJitsiModal}
-        roomName={currentActiveRoomId || ''}
-        onClose={() => setShowJitsiModal(false)}
+        roomName={jitsiRoomId || currentActiveRoomId || ''}
+        token={jitsiToken}
+        onClose={async () => {
+          setShowJitsiModal(false);
+          setJitsiToken('');
+          const client = getMatrixClient();
+          if (client && currentActiveRoomId && activeJitsiWidget) {
+            try {
+              await client.sendStateEvent(currentActiveRoomId, "im.vector.modular.widgets", {}, activeJitsiWidget.getStateKey());
+            } catch (e) {
+              console.log("Failed to end widget on close", e);
+            }
+          }
+        }}
       />
     </KeyboardAvoidingView>
   );
