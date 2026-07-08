@@ -529,6 +529,28 @@ class MatrixService extends EventEmitter {
     // Hàm bọc an toàn chống crash E2EE
     async _safeSendEvent(roomId: string, eventType: string, content: any) {
         if (!this.client) return null;
+
+        // Bắt buộc tải device keys mới nhất trước khi gửi nếu phòng có mã hóa.
+        // Khắc phục lỗi "Thiết bị gửi chưa chia sẻ khóa" trên các thiết bị/client mới đăng nhập (như Web App Rust Crypto)
+        // do Legacy Crypto ở đây cập nhật device list bị chậm hoặc sai sót qua LocalStorage.
+        if (this.client.isCryptoEnabled() && this.client.isRoomEncrypted(roomId)) {
+            try {
+                const room = this.client.getRoom(roomId);
+                if (room) {
+                    const members = room.getJoinedMembers().map((m: any) => m.userId);
+                    await this.client.downloadKeys(members);
+                    // BẮT BUỘC hủy phiên Megolm cũ để ép nó tạo phiên mới và gửi lại room_key cho TẤT CẢ các thiết bị vừa tải về
+                    try {
+                        this.client.forceDiscardSession(roomId);
+                    } catch (e) {
+                        console.warn("Failed to discard session:", e);
+                    }
+                }
+            } catch (e) {
+                console.warn("Failed to force key updates before sending event:", e);
+            }
+        }
+
         try {
             return await this.client.sendEvent(roomId, eventType, content);
         } catch (error: any) {
