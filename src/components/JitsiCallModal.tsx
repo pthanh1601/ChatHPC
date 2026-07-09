@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, TouchableOpacity, View, Alert } from 'react-native';
+import { StyleSheet, TouchableOpacity, View, Alert, Text } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { JitsiMeeting } from '@jitsi/react-native-sdk';
 import { X } from 'lucide-react-native';
@@ -17,6 +17,7 @@ interface JitsiCallModalProps {
 export function JitsiCallModal({ visible, roomName, onClose, serverURL = 'https://jitsi.5hpc.com', token, isHost }: JitsiCallModalProps) {
     const [isReady, setIsReady] = useState(false);
     const hasPrompted = React.useRef(false);
+    const remoteParticipants = React.useRef<Set<string>>(new Set());
 
     useEffect(() => {
         if (visible) {
@@ -44,12 +45,10 @@ export function JitsiCallModal({ visible, roomName, onClose, serverURL = 'https:
     const handleExit = () => {
         if (hasPrompted.current) return;
         hasPrompted.current = true;
-        
-        if (isHost) {
-            onClose(true);
-        } else {
-            onClose(false);
-        }
+
+        // Default to "Leave temporarily" to prevent Jitsi's native "Leave" button from accidentally ending the call.
+        // To officially end the call for all, the Host must use the "Kết thúc" banner in ChatSingle.
+        onClose(false);
     };
 
     return (
@@ -59,12 +58,25 @@ export function JitsiCallModal({ visible, roomName, onClose, serverURL = 'https:
                     eventListeners={{
                         onReadyToClose: () => {
                             console.log("[Jitsi] onReadyToClose fired!");
-                            handleExit();
+                            // Delay slightly to ensure onParticipantLeft events have time to arrive if "End for all" was clicked
+                            setTimeout(() => handleExit(), 500);
                         },
                         onConferenceLeft: () => {
-                            console.log("[Jitsi] onConferenceLeft fired!", arguments);
-                            handleExit();
+                            console.log("[Jitsi] onConferenceLeft fired!");
+                            setTimeout(() => handleExit(), 500);
                         },
+                        onParticipantJoined: (participant: any) => {
+                            const pid = participant?.participantId || participant?.id;
+                            if (pid) {
+                                remoteParticipants.current.add(pid);
+                            }
+                        },
+                        onParticipantLeft: (participant: any) => {
+                            const pid = participant?.participantId || participant?.id;
+                            if (pid) {
+                                remoteParticipants.current.delete(pid);
+                            }
+                        }
                     }}
                     room={finalRoomName}
                     serverURL={serverURL}
@@ -84,12 +96,41 @@ export function JitsiCallModal({ visible, roomName, onClose, serverURL = 'https:
                     style={{ flex: 1 }}
                 />
             )}
+            
+            {/* Custom Overlay Button for "Leave temporarily" */}
+            <TouchableOpacity 
+                style={styles.leaveTempButton}
+                onPress={() => {
+                    if (hasPrompted.current) return;
+                    hasPrompted.current = true;
+                    onClose(false); // Force leave temporarily
+                }}
+            >
+                <Text style={styles.leaveTempText}>Rời tạm thời</Text>
+            </TouchableOpacity>
 
         </SafeAreaView>
     );
 }
 
 const styles = StyleSheet.create({
+    leaveTempButton: {
+        position: 'absolute',
+        top: 60,
+        left: 20,
+        backgroundColor: 'rgba(0, 0, 0, 0.6)',
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        borderRadius: 20,
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.2)',
+        zIndex: 999999,
+    },
+    leaveTempText: {
+        color: '#fff',
+        fontSize: 14,
+        fontWeight: 'bold',
+    },
     container: {
         flex: 1,
         backgroundColor: '#1e1e1e',
